@@ -3,7 +3,7 @@ import datetime
 from django.core.management.base import BaseCommand
 from kobo_etl.management.utiils import set_logger
 
-from kobo_etl.services.GrievanceServices import *
+from kobo_etl.services.KoboServices import *
 
 logger = set_logger()
 
@@ -38,6 +38,9 @@ class Command(BaseCommand):
             choices=[
                 "all",
                 "grievance",
+                "training",
+                "promotion",
+                "micro_project",
             ],
         )
 
@@ -55,7 +58,20 @@ class Command(BaseCommand):
 
     def sync_kobo(self, start_date, stop_date, scope):
         logger.info("Received task")
-        # grievance
-        if scope == "grievance":
-            sync_grievance(start_date, stop_date)
+        match scope:
+            case "grievance":
+                sync_grievance(start_date, stop_date)
+            case "training":
+                sync_training(start_date, stop_date)
+            case "promotion":
+                sync_bcpromotion(start_date, stop_date)
+            case "micro_project":
+                sync_micro_project(start_date, stop_date)
+            case "all":
+                sync_grievance(start_date, stop_date)
+                sync_training(start_date, stop_date)
+                sync_bcpromotion(start_date, stop_date)
+                sync_micro_project(start_date, stop_date)
+            case _:
+                logger.warning("Unknown scope: %s", scope)
         logger.info("Finishing task")

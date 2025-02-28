@@ -5,9 +5,9 @@ from abc import ABC
 class BaseKoboConverter(ABC):
 
     @classmethod
-    def to_data_element_obj(cls, de_id, obj, **kwargs):
+    def to_data_element_obj(cls, koboData, **kwargs):
         raise NotImplementedError('`to_data_element_obj()` must be implemented.')  # pragma: no cover
 
     @classmethod
-    def to_data_set_obj(cls, de_id, obj, **kwargs):
-        raise NotImplementedError('`to_data_set_obj()` must be implemented.')  # pragma: no cover
+    def to_data_set_obj(cls, koboDatas, **kwargs):
+        return [cls.to_data_element_obj(koboData) for koboData in koboDatas]

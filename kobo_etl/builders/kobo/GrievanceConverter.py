@@ -27,8 +27,15 @@ class GrievanceConverter(BaseKoboConverter):
 
     @classmethod
     def to_data_set_obj(cls, grievancesKoboData, **kwargs):
-        grievances = [] 
-        for grievanceKoboData in grievancesKoboData:
-            grievances.append(cls.to_data_element_obj(grievanceKoboData))
-        return grievances
+        """
+        Converts a list of Kobo grievance data into a list of data element objects.
+
+        Args:
+            grievancesKoboData (list): A list of Kobo grievance data dictionaries.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            list: A list of data element objects created from the Kobo grievance data.
+        """
+        return [cls.to_data_element_obj(grievanceKoboData) for grievanceKoboData in grievancesKoboData]
 
