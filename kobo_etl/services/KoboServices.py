@@ -1,12 +1,13 @@
 # Service to pull openIMIS grievance from Kobo
 import logging
 
-from kobo_etl.builders.kobo.MicroProjectConverter import MicroProjectConverter
-from merankabandi.models import MicroProject, SensitizationTraining, BehaviorChangePromotion
+from merankabandi.models import MicroProject, MonetaryTransfer, SensitizationTraining, BehaviorChangePromotion
 from grievance_social_protection.models import Ticket
 
 from kobo_etl.builders.kobo.SensitizationTrainingConverter import SensitizationTrainingConverter
 from kobo_etl.builders.kobo.BehaviorChangePromotionConverter import BehaviorChangePromotionConverter
+from kobo_etl.builders.kobo.MonetaryTransferConverter import MonetaryTransferConverter
+from kobo_etl.builders.kobo.MicroProjectConverter import MicroProjectConverter
 from kobo_etl.builders.kobo.GrievanceConverter import GrievanceConverter
 from kobo_etl.strategy.kobo_client import *
 
@@ -34,4 +35,10 @@ def sync_micro_project(startDate, stopDate):
     koboFormData = get("aGMbKXkL2XUhtUAmEf95es").get('results')
     trainings = MicroProjectConverter.to_data_set_obj(koboFormData)
     MicroProject.objects.bulk_create(trainings)
+    return
+
+def sync_monetary_transfer(startDate, stopDate):
+    koboFormData = get("ayK8Y5yP3MPTYQ3cPcpj9N").get('results')
+    trainings = MonetaryTransferConverter.to_data_set_obj(koboFormData)
+    MonetaryTransfer.objects.bulk_create(trainings)
     return
