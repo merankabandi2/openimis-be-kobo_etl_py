@@ -10,4 +10,6 @@ class BaseKoboConverter(ABC):
 
     @classmethod
     def to_data_set_obj(cls, koboDatas, **kwargs):
-        return [cls.to_data_element_obj(koboData) for koboData in koboDatas]
+        return [obj for koboData in koboDatas
+                if (obj := cls.to_data_element_obj(koboData, **kwargs)) is not None and 
+                (not hasattr(obj.__class__, 'location') or hasattr(obj, 'location'))]

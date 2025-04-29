@@ -41,7 +41,6 @@ class Command(BaseCommand):
                 "training",
                 "promotion",
                 "micro_project",
-                "monetary_transfer",
             ],
         )
 
@@ -75,7 +74,6 @@ class Command(BaseCommand):
                 sync_training(start_date, stop_date)
                 sync_bcpromotion(start_date, stop_date)
                 sync_micro_project(start_date, stop_date)
-                sync_monetary_transfer(start_date, stop_date)
             case _:
                 logger.warning("Unknown scope: %s", scope)
         logger.info("Finishing task")

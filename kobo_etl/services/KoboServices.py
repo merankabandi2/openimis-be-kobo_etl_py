@@ -48,7 +48,7 @@ def bulk_upsert(model_class, data_list: List[Dict[Any, Any]],
         created, updated = _process_chunk(model_class, chunk, lookup_field, update_fields)
         created_count += created
         updated_count += updated
-    print([created_count, updated_count, len(data_list)])
+    logger.info(f"Created: {created_count}, Updated: {updated_count}, Total: {len(data_list)}")
     return created_count, updated_count
 
 
