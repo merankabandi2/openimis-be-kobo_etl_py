@@ -126,7 +126,7 @@ class GrievanceConverter(BaseKoboConverter):
             
             # Form metadata
             form_id = 'aeAgbxjy7d6rD8jtUdMD9Z',  # Form ID from the XML
-            code_date = grievanceKoboData.get('code_date'),
+            #code_date = grievanceKoboData.get('code_date'),
             
             # Status based on resolution
             status = 'OPEN' if grievanceKoboData.get('plainte_resolue') == 'non' else 'RESOLVED',
