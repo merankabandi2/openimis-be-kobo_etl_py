@@ -19,13 +19,6 @@ class KoboETLScopeEnum(graphene.Enum):
     MONETARY_TRANSFER = "monetary_transfer"
 
 
-class KoboETLInput(graphene.InputObjectType):
-    scope = graphene.Field(KoboETLScopeEnum, required=True)
-    # Optional date range parameters for future use
-    start_date = graphene.Date(required=False)
-    end_date = graphene.Date(required=False)
-
-
 class RunKoboETLMutation(OpenIMISMutation):
     """
     Run Kobo ETL process asynchronously
@@ -33,8 +26,11 @@ class RunKoboETLMutation(OpenIMISMutation):
     _mutation_module = "kobo_etl"
     _mutation_class = "RunKoboETLMutation"
 
-    class Input(KoboETLInput):
-        pass
+    class Input(OpenIMISMutation.Input):
+        scope = graphene.Field(KoboETLScopeEnum, required=True)
+        # Optional date range parameters for future use
+        start_date = graphene.Date(required=False)
+        end_date = graphene.Date(required=False)
 
     @classmethod
     def async_mutate(cls, user, **data):
