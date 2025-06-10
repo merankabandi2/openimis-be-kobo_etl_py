@@ -75,9 +75,9 @@ class GrievanceConverter(BaseKoboConverter):
             
             # Location details
             gps_location = grievanceKoboData.get('group_im0ri26/Localisation'),
-            province = grievanceKoboData.get('group_im0ri26/province'),
-            commune = grievanceKoboData.get('group_im0ri26/commune'),
-            zone = grievanceKoboData.get('group_im0ri26/zone'),
+            # province = grievanceKoboData.get('group_im0ri26/province'),
+            # commune = grievanceKoboData.get('group_im0ri26/commune'),
+            # zone = grievanceKoboData.get('group_im0ri26/zone'),
             colline = grievanceKoboData.get('group_im0ri26/colline'),
             
             # Complaint details

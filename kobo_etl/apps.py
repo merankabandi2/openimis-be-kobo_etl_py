@@ -11,6 +11,10 @@ DEFAULT_CFG = {}
 class KoboConfig(AppConfig):
     name = MODULE_NAME
 
+    # GraphQL settings
+    gql_query_kobo_etl_status_perms = ['180001']
+    gql_mutation_run_kobo_etl_perms = ['180002']
+
     def ready(self):
         from core.models import ModuleConfiguration
 
