@@ -1,6 +1,6 @@
 import graphene
-from core import ExtendedConnection, signal_mutation_module_validate
-from core.schema import OpenIMISMutation
+from core import ExtendedConnection
+from core.schema import OpenIMISMutation, signal_mutation_module_validate
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
