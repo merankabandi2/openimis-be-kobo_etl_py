@@ -5,7 +5,7 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-TOKEN = settings.TOKEN_KOBO
+TOKEN = os.environ.get('TOKEN_KOBO', getattr(settings, 'TOKEN_KOBO', ''))
 DEFAULT_BASE_URL = os.environ.get('KOBO_BASE_URL', 'https://kf.kobotoolbox.org')
 PARAMS = {
     'format': 'json'
