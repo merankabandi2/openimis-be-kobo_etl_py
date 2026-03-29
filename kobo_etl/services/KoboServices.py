@@ -145,11 +145,13 @@ def _process_chunk(model_class, data_chunk: List[Dict[Any, Any]],
 
 def sync_grievance(startDate, stopDate):
     # Old form (v1) — legacy, still active for historical data
+    # update_fields=[] means: insert new records only, never overwrite existing ones.
+    # Once a ticket is in the system, local changes (status, workflow, resolution) own it.
     try:
         koboFormData = get("aeAgbxjy7d6rD8jtUdMD9Z").get('results', [])
         if koboFormData:
             items = GrievanceConverter.to_data_set_obj(koboFormData)
-            bulk_upsert(model_class=Ticket, data_list=items)
+            bulk_upsert(model_class=Ticket, data_list=items, update_fields=[])
             logger.info(f"Synced {len(items)} grievances from old form (v1)")
     except Exception as e:
         logger.warning(f"Failed to sync old grievance form: {e}")
