@@ -1,36 +1,38 @@
 import logging
+import os
 import requests
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
 TOKEN = settings.TOKEN_KOBO
-DEFAULT_BASE_URL = 'https://kf.kobotoolbox.org'
+DEFAULT_BASE_URL = os.environ.get('KOBO_BASE_URL', 'https://kf.kobotoolbox.org')
 PARAMS = {
     'format': 'json'
 }
 
-# Per-form overrides: map form_id → {"token": "...", "base_url": "..."}
-# Configure in Django settings as KOBO_FORM_OVERRIDES = { "form_id": { ... } }
-FORM_OVERRIDES = getattr(settings, 'KOBO_FORM_OVERRIDES', {})
+
+def _get_form_config(kobo_asset_uid):
+    """Resolve token and base_url for a form.
+
+    Per-form overrides via env vars:
+        KOBO_TOKEN_<form_id>=<token>
+        KOBO_URL_<form_id>=<base_url>
+
+    Example in .env:
+        KOBO_TOKEN_atpoVbHXZCdLD9ETHTv6z4=abc123def456
+        KOBO_URL_atpoVbHXZCdLD9ETHTv6z4=https://kobo.other-server.org
+
+    Falls back to TOKEN_KOBO + KOBO_BASE_URL if no override.
+    """
+    token = os.environ.get(f'KOBO_TOKEN_{kobo_asset_uid}', TOKEN)
+    base_url = os.environ.get(f'KOBO_URL_{kobo_asset_uid}', DEFAULT_BASE_URL)
+    return token, base_url
 
 
 def get(kobo_asset_uid, **kwargs):
-    """Fetch form data from KoBo API.
-
-    Uses default TOKEN_KOBO and kf.kobotoolbox.org unless the form has
-    an override in settings.KOBO_FORM_OVERRIDES:
-
-        KOBO_FORM_OVERRIDES = {
-            "atpoVbHXZCdLD9ETHTv6z4": {
-                "token": "your_other_server_token",
-                "base_url": "https://kobo.other-server.org",
-            }
-        }
-    """
-    override = FORM_OVERRIDES.get(kobo_asset_uid, {})
-    token = override.get('token', TOKEN)
-    base_url = override.get('base_url', DEFAULT_BASE_URL)
+    """Fetch form data from KoBo API."""
+    token, base_url = _get_form_config(kobo_asset_uid)
     headers = {'Authorization': f'Token {token}'}
 
     try:
