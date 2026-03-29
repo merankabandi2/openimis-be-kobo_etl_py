@@ -144,12 +144,28 @@ def _process_chunk(model_class, data_chunk: List[Dict[Any, Any]],
     return created_count, updated_count
 
 def sync_grievance(startDate, stopDate):
-    koboFormData = get("aeAgbxjy7d6rD8jtUdMD9Z").get('results')
-    items = GrievanceConverter.to_data_set_obj(koboFormData)
-    bulk_upsert(
-        model_class=Ticket,
-        data_list=items
-    )
+    # Old form (v1) — legacy, still active for historical data
+    try:
+        koboFormData = get("aeAgbxjy7d6rD8jtUdMD9Z").get('results', [])
+        if koboFormData:
+            items = GrievanceConverter.to_data_set_obj(koboFormData)
+            bulk_upsert(model_class=Ticket, data_list=items)
+            logger.info(f"Synced {len(items)} grievances from old form (v1)")
+    except Exception as e:
+        logger.warning(f"Failed to sync old grievance form: {e}")
+
+    # New form (v2) — 2025 restructured form with workflow support
+    try:
+        from merankabandi.converters.grievance_converter_v2 import GrievanceConverterV2
+        new_kobo_data = get("atpoVbHXZCdLD9ETHTv6z4").get('results', [])
+        if new_kobo_data:
+            results = GrievanceConverterV2.import_batch(new_kobo_data)
+            imported = sum(1 for t, w, e in results if e is None)
+            errors = sum(1 for t, w, e in results if e is not None)
+            logger.info(f"Synced {imported} grievances from new form (v2), {errors} errors")
+    except Exception as e:
+        logger.warning(f"Failed to sync new grievance form: {e}")
+
     return
 
 def sync_training(startDate, stopDate):
