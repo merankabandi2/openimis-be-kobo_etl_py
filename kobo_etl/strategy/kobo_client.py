@@ -31,22 +31,34 @@ def _get_form_config(kobo_asset_uid):
 
 
 def get(kobo_asset_uid, **kwargs):
-    """Fetch form data from KoBo API."""
+    """Fetch ALL form data from KoBo API, handling pagination.
+
+    Returns {"count": N, "results": [...all submissions...]}.
+    """
     token, base_url = _get_form_config(kobo_asset_uid)
     headers = {'Authorization': f'Token {token}'}
+    all_results = []
+    url = f'{base_url}/api/v2/assets/{kobo_asset_uid}/data'
+    params = {**PARAMS}
 
     try:
-        url = f'{base_url}/api/v2/assets/{kobo_asset_uid}/data'
-        response = requests.get(url=url, params=PARAMS, headers=headers)
-        response.raise_for_status()
-        return response.json()
+        while url:
+            response = requests.get(url=url, params=params, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            results = data.get('results', [])
+            all_results.extend(results)
+            url = data.get('next')
+            params = {}  # next URL already includes params
+            if results:
+                logger.info(f"Fetched {len(all_results)}/{data.get('count', '?')} from {kobo_asset_uid}")
+
+        return {"count": len(all_results), "results": all_results}
     except requests.exceptions.HTTPError as e:
         if e.response is not None and e.response.status_code == 409:
-            response = {"status_code": e.code, "url": e.url, "text": e.description}
-            logger.debug(e)
-            return response
+            return {"status_code": e.code, "url": e.url, "text": e.description}
         logger.error(f"HTTP error fetching {kobo_asset_uid} from {base_url}: {e}")
-        return {"results": []}
+        return {"count": len(all_results), "results": all_results}
     except requests.exceptions.RequestException as e:
         logger.error(f"Request error fetching {kobo_asset_uid} from {base_url}: {e}")
-        return {"results": []}
+        return {"count": len(all_results), "results": all_results}
