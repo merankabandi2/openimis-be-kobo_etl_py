@@ -21,8 +21,6 @@ setup(
     install_requires=[
         'django',
         'django-db-signals',
-        'django-adx',
-        'email-validator',
         'dict2obj',
     ],   
     classifiers=[

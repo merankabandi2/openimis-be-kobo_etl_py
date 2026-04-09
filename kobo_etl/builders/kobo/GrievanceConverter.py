@@ -5,8 +5,35 @@ from datetime import datetime
 
 from core.models import User
 from grievance_social_protection.models import Ticket
+from location.models import Location
 
 from . import BaseKoboConverter
+
+
+def _resolve_colline(colline_value):
+    """Resolve a colline value (name or code) to colline_code + location_id."""
+    if not colline_value:
+        return {}
+
+    colline_str = str(colline_value).strip()
+
+    # Try KoBo→openIMIS code conversion
+    if colline_str.isdigit():
+        padded = colline_str.zfill(7)
+        imis_code = padded[:4] + padded[5:]
+        loc = Location.objects.filter(code=imis_code, type='V').first()
+        if loc:
+            return {'colline_code': loc.code, 'location_id': str(loc.id)}
+        loc = Location.objects.filter(code=colline_str, type='V').first()
+        if loc:
+            return {'colline_code': loc.code, 'location_id': str(loc.id)}
+
+    # Try name match
+    loc = Location.objects.filter(name__iexact=colline_str, type='V').first()
+    if loc:
+        return {'colline_code': loc.code, 'location_id': str(loc.id)}
+
+    return {}
 
 logger = logging.getLogger('openIMIS')
 
@@ -27,21 +54,22 @@ class GrievanceConverter(BaseKoboConverter):
     def to_data_element_obj(cls, grievanceKoboData, **kwargs):
         user = _get_import_user()
 
-        # Determine main category based on form selections
-        categories = []
+        # Resolve category to a single plain string matching module config.
+        # Old form allows multi-select across 3 groups (sensitive, special, non-sensitive).
+        # Collect all raw values, resolve to config categories, pick most restrictive.
+        from merankabandi.converters.category_resolver import (
+            resolve_categories, derive_flags_from_category,
+        )
+        raw_category_values = []
         if grievanceKoboData.get('group_categorie/categories_sensibles'):
-            categories.append(grievanceKoboData.get('group_categorie/categories_sensibles'))
+            raw_category_values.append(grievanceKoboData.get('group_categorie/categories_sensibles'))
         if grievanceKoboData.get('group_categorie/categories_speciales'):
-            categories.append(grievanceKoboData.get('group_categorie/categories_speciales'))
+            raw_category_values.append(grievanceKoboData.get('group_categorie/categories_speciales'))
         if grievanceKoboData.get('group_categorie/categories_non_sensibles'):
-            categories.append(grievanceKoboData.get('group_categorie/categories_non_sensibles'))
+            raw_category_values.append(grievanceKoboData.get('group_categorie/categories_non_sensibles'))
 
-        # Determine flags for sensitive cases
-        flags = []
-        if grievanceKoboData.get('group_categorie/categories_sensibles'):
-            flags.append('SENSITIVE')
-        if grievanceKoboData.get('group_categorie/categories_speciales'):
-            flags.append('SPECIAL')
+        main_category, additional_categories, _ = resolve_categories(raw_category_values)
+        flags_str = derive_flags_from_category(main_category)
 
         # Handle specific subcategories
         channel = grievanceKoboData.get('canaux')
@@ -67,6 +95,9 @@ class GrievanceConverter(BaseKoboConverter):
         if grievanceKoboData.get('group_categorie/categories_non_sensibles') == 'compte':
             account_type = grievanceKoboData.get('groupe_compte/categorie_compte')
 
+        # Resolve location from colline value
+        resolved_loc = _resolve_colline(grievanceKoboData.get('group_im0ri26/colline'))
+
         # Build json_ext with all custom data (columns were dropped from Ticket model)
         json_ext = {
             "form_version": "2025_v1",
@@ -85,7 +116,8 @@ class GrievanceConverter(BaseKoboConverter):
                 "non_beneficiary_details": grievanceKoboData.get('pas_beneficiaire_details'),
             },
             "location": {
-                "colline": grievanceKoboData.get('group_im0ri26/colline'),
+                "colline_code": resolved_loc.get('colline_code', ''),
+                "location_id": resolved_loc.get('location_id'),
                 "gps": grievanceKoboData.get('group_im0ri26/Localisation'),
             },
             "categorization": {
@@ -135,13 +167,16 @@ class GrievanceConverter(BaseKoboConverter):
             except (ValueError, TypeError):
                 pass
 
+        if additional_categories:
+            json_ext['additional_categories'] = additional_categories
+
         return Ticket(
             id=grievanceKoboData.get('_uuid'),
             title=grievanceKoboData.get('id_plainte'),
             description=grievanceKoboData.get('description_plainte'),
             code=code,
-            category=json.dumps(categories) if categories else None,
-            flags=json.dumps(flags) if flags else None,
+            category=main_category,
+            flags=flags_str,
             channel=channel,
             status='OPEN' if grievanceKoboData.get('plainte_resolue') == 'non' else 'RESOLVED',
             date_of_incident=date_of_incident,
