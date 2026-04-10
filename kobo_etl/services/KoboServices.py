@@ -165,7 +165,7 @@ def sync_grievance(startDate, stopDate):
             created, updated, wf_count = GrievanceConverterV2.import_batch(new_kobo_data)
             logger.info(f"Synced v2: {created} new, {updated} updated, {wf_count} workflows")
     except Exception as e:
-        logger.warning(f"Failed to sync new grievance form: {e}")
+        logger.warning(f"Failed to sync new grievance form: {e}", exc_info=True)
 
     return
 
