@@ -41,6 +41,7 @@ class Command(BaseCommand):
                 "training",
                 "promotion",
                 "micro_project",
+                "monetary_transfer",
             ],
         )
 
