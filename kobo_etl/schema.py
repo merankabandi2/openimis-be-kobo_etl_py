@@ -1,9 +1,11 @@
 import graphene
 from core import ExtendedConnection
-from core.schema import OpenIMISMutation, signal_mutation_module_validate
+from core.models import MutationLog
+from core.schema import OpenIMISMutation, signal_mutation_module_before_mutating
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
+from .apps import MODULE_NAME, RUN_ETL_MUTATION_CLASS, RUN_ETL_MUTATION_LOG_TAG
 from .gql_queries import Query
 import logging
 
@@ -23,8 +25,8 @@ class RunKoboETLMutation(OpenIMISMutation):
     """
     Run Kobo ETL process asynchronously
     """
-    _mutation_module = "kobo_etl"
-    _mutation_class = "RunKoboETLMutation"
+    _mutation_module = MODULE_NAME
+    _mutation_class = RUN_ETL_MUTATION_CLASS
 
     class Input(OpenIMISMutation.Input):
         scope = graphene.Field(KoboETLScopeEnum, required=True)
@@ -96,6 +98,24 @@ class RunKoboETLMutation(OpenIMISMutation):
 
 class Mutation(graphene.ObjectType):
     run_kobo_etl = RunKoboETLMutation.Field()
+
+
+def on_kobo_etl_mutation(sender, **kwargs):
+    """Tag the MutationLog of a RunKoboETLMutation so koboEtlStatus.lastSyncDate can find it."""
+    if kwargs.get("mutation_class") != RUN_ETL_MUTATION_CLASS:
+        return []
+    mutation_log = MutationLog.objects.filter(id=kwargs.get("mutation_log_id")).first()
+    if mutation_log is None:
+        return []
+    # Queryset update: the status column is owned by core's mark_as_successful/mark_as_failed.
+    MutationLog.objects.filter(id=mutation_log.id).update(
+        json_ext={**(mutation_log.json_ext or {}), **RUN_ETL_MUTATION_LOG_TAG}
+    )
+    return []
+
+
+def bind_signals():
+    signal_mutation_module_before_mutating[MODULE_NAME].connect(on_kobo_etl_mutation)
 
 
 # Export Query and Mutation at module level for schema loader

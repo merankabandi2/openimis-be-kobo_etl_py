@@ -8,6 +8,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CFG = {}
 
+# MutationLog has no module or class column: RunKoboETLMutation logs are tagged in json_ext
+# with these keys (see schema.on_kobo_etl_mutation) so the last run can be looked up.
+RUN_ETL_MUTATION_CLASS = "RunKoboETLMutation"
+RUN_ETL_MUTATION_LOG_TAG = {"mutation_module": MODULE_NAME, "mutation_class": RUN_ETL_MUTATION_CLASS}
+
 class KoboConfig(AppConfig):
     name = MODULE_NAME
 

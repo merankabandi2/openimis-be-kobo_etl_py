@@ -4,6 +4,7 @@ from core import ExtendedConnection
 from django.utils.translation import gettext as _
 from django.core.exceptions import PermissionDenied
 from core.models import MutationLog
+from kobo_etl.apps import RUN_ETL_MUTATION_LOG_TAG
 
 
 class KoboETLStatusType(graphene.ObjectType):
@@ -29,8 +30,7 @@ class KoboETLStatusType(graphene.ObjectType):
     def resolve_last_sync_date(self, info):
         # Get the last successful ETL mutation
         last_mutation = MutationLog.objects.filter(
-            mutation_module='kobo_etl',
-            mutation_class='RunKoboETLMutation',
+            **{f"json_ext__{key}": value for key, value in RUN_ETL_MUTATION_LOG_TAG.items()},
             status=MutationLog.SUCCESS
         ).order_by('-request_date_time').first()
         
