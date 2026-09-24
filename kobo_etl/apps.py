@@ -6,14 +6,22 @@ MODULE_NAME = "kobo_etl"
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CFG = {}
+DEFAULT_CFG = {
+    "gql_query_kobo_etl_status_perms": ["181001"],
+    "gql_mutation_run_kobo_etl_perms": ["181002"],
+}
+
+# MutationLog has no module or class column: RunKoboETLMutation logs are tagged in json_ext
+# with these keys (see schema.on_kobo_etl_mutation) so the last run can be looked up.
+RUN_ETL_MUTATION_CLASS = "RunKoboETLMutation"
+RUN_ETL_MUTATION_LOG_TAG = {"mutation_module": MODULE_NAME, "mutation_class": RUN_ETL_MUTATION_CLASS}
 
 class KoboConfig(AppConfig):
     name = MODULE_NAME
 
     # GraphQL settings
-    gql_query_kobo_etl_status_perms = ['180001']
-    gql_mutation_run_kobo_etl_perms = ['180002']
+    gql_query_kobo_etl_status_perms = DEFAULT_CFG["gql_query_kobo_etl_status_perms"]
+    gql_mutation_run_kobo_etl_perms = DEFAULT_CFG["gql_mutation_run_kobo_etl_perms"]
 
     def ready(self):
         from core.models import ModuleConfiguration

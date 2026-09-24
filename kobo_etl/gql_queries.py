@@ -4,6 +4,7 @@ from core import ExtendedConnection
 from django.utils.translation import gettext as _
 from django.core.exceptions import PermissionDenied
 from core.models import MutationLog
+from kobo_etl.apps import KoboConfig, RUN_ETL_MUTATION_LOG_TAG
 
 
 class KoboETLStatusType(graphene.ObjectType):
@@ -29,8 +30,7 @@ class KoboETLStatusType(graphene.ObjectType):
     def resolve_last_sync_date(self, info):
         # Get the last successful ETL mutation
         last_mutation = MutationLog.objects.filter(
-            mutation_module='kobo_etl',
-            mutation_class='RunKoboETLMutation',
+            **{f"json_ext__{key}": value for key, value in RUN_ETL_MUTATION_LOG_TAG.items()},
             status=MutationLog.SUCCESS
         ).order_by('-request_date_time').first()
         
@@ -45,7 +45,7 @@ class Query(graphene.ObjectType):
     
     def resolve_kobo_etl_status(self, info):
         # Check permissions
-        if not info.context.user.has_perms(['kobo_etl.view_etl_status']):
+        if not info.context.user.has_perms(KoboConfig.gql_query_kobo_etl_status_perms):
             raise PermissionDenied(_("unauthorized"))
         
         return KoboETLStatusType()
