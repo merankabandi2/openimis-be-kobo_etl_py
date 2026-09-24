@@ -5,7 +5,7 @@ from core.schema import OpenIMISMutation, signal_mutation_module_before_mutating
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext as _
-from .apps import MODULE_NAME, RUN_ETL_MUTATION_CLASS, RUN_ETL_MUTATION_LOG_TAG
+from .apps import KoboConfig, MODULE_NAME, RUN_ETL_MUTATION_CLASS, RUN_ETL_MUTATION_LOG_TAG
 from .gql_queries import Query
 import logging
 
@@ -41,7 +41,7 @@ class RunKoboETLMutation(OpenIMISMutation):
                 raise ValidationError(_("mutation.authentication_required"))
 
             # Check permissions - user should have appropriate rights
-            if not user.has_perms(['kobo_etl.run_etl']):
+            if not user.has_perms(KoboConfig.gql_mutation_run_kobo_etl_perms):
                 raise ValidationError(_("unauthorized"))
 
             # Import here to avoid circular imports
