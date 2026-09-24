@@ -54,32 +54,36 @@ class RunKoboETLMutation(OpenIMISMutation):
 
             logger.info(f"Running Kobo ETL with scope: {scope} for user: {user.username}")
 
-            # Execute appropriate sync based on scope
             # sync_* signatures require (start_date, end_date) positionally, see services/KoboServices.py
+            syncs = {
+                'grievance': sync_grievance,
+                'training': sync_training,
+                'promotion': sync_bcpromotion,
+                'micro_project': sync_micro_project,
+                'monetary_transfer': sync_monetary_transfer,
+            }
             if scope == 'all':
-                # Run all syncs
-                sync_results = {
-                    'grievance': sync_grievance(start_date, end_date),
-                    'training': sync_training(start_date, end_date),
-                    'promotion': sync_bcpromotion(start_date, end_date),
-                    'micro_project': sync_micro_project(start_date, end_date),
-                    'monetary_transfer': sync_monetary_transfer(start_date, end_date),
-                }
-                logger.info(f"All syncs completed: {sync_results}")
-            elif scope == 'grievance':
-                sync_results = {'grievance': sync_grievance(start_date, end_date)}
-            elif scope == 'training':
-                sync_results = {'training': sync_training(start_date, end_date)}
-            elif scope == 'promotion':
-                sync_results = {'promotion': sync_bcpromotion(start_date, end_date)}
-            elif scope == 'micro_project':
-                sync_results = {'micro_project': sync_micro_project(start_date, end_date)}
-            elif scope == 'monetary_transfer':
-                sync_results = {'monetary_transfer': sync_monetary_transfer(start_date, end_date)}
+                selected = list(syncs)
+            elif scope in syncs:
+                selected = [scope]
             else:
                 raise ValidationError(f"Invalid scope: {scope}")
 
-            # Return None for success (no errors)
+            # Each scope runs even if a previous one failed; any failure fails the mutation.
+            errors = []
+            for name in selected:
+                try:
+                    syncs[name](start_date, end_date)
+                except Exception as exc:
+                    logger.error(f"Kobo ETL sync '{name}' failed: {exc}", exc_info=True)
+                    errors.append({
+                        'message': _("kobo_etl.mutation.failed"),
+                        'detail': f"{name}: {exc}",
+                    })
+
+            if errors:
+                return errors
+            logger.info(f"Kobo ETL syncs completed: {selected}")
             return None
 
         except Exception as exc:
