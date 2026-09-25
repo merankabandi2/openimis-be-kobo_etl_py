@@ -60,6 +60,7 @@ class GrievanceConverter(BaseKoboConverter):
         from merankabandi.converters.category_resolver import (
             resolve_categories, derive_flags_from_category,
         )
+        from merankabandi.grievance_resolution import default_resolution_for_category
         raw_category_values = []
         if grievanceKoboData.get('group_categorie/categories_sensibles'):
             raw_category_values.append(grievanceKoboData.get('group_categorie/categories_sensibles'))
@@ -178,6 +179,7 @@ class GrievanceConverter(BaseKoboConverter):
             category=main_category,
             flags=flags_str,
             channel=channel,
+            resolution=default_resolution_for_category(main_category),
             status='OPEN' if grievanceKoboData.get('plainte_resolue') == 'non' else 'RESOLVED',
             date_of_incident=date_of_incident,
             json_ext=json_ext,
