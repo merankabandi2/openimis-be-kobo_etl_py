@@ -143,7 +143,17 @@ def _process_chunk(model_class, data_chunk: List[Dict[Any, Any]],
     
     return created_count, updated_count
 
+class KoboSyncError(Exception):
+    """Raised when one or more parts of a KoBo sync failed."""
+
+
 def sync_grievance(startDate, stopDate):
+    """Import both KoBo grievance forms; each form is attempted even if the other fails.
+
+    Raises KoboSyncError naming every form that failed.
+    """
+    failures = []
+
     # Old form (v1) — legacy, still active for historical data
     # update_fields=[] means: insert new records only, never overwrite existing ones.
     # Once a ticket is in the system, local changes (status, workflow, resolution) own it.
@@ -154,7 +164,8 @@ def sync_grievance(startDate, stopDate):
             bulk_upsert(model_class=Ticket, data_list=items, update_fields=[])
             logger.info(f"Synced {len(items)} grievances from old form (v1)")
     except Exception as e:
-        logger.warning(f"Failed to sync old grievance form: {e}")
+        logger.error(f"Failed to sync old grievance form: {e}", exc_info=True)
+        failures.append(f"v1: {e}")
 
     # New form (v2) — 2025 restructured form with workflow support
     # Uses same bulk_upsert pattern as v1, then creates workflows after
@@ -165,9 +176,11 @@ def sync_grievance(startDate, stopDate):
             created, updated, wf_count = GrievanceConverterV2.import_batch(new_kobo_data)
             logger.info(f"Synced v2: {created} new, {updated} updated, {wf_count} workflows")
     except Exception as e:
-        logger.warning(f"Failed to sync new grievance form: {e}", exc_info=True)
+        logger.error(f"Failed to sync new grievance form: {e}", exc_info=True)
+        failures.append(f"v2: {e}")
 
-    return
+    if failures:
+        raise KoboSyncError(f"Grievance sync failed: {'; '.join(failures)}")
 
 def sync_training(startDate, stopDate):
     koboFormData = get("a77BL33LXCfAVovg4seMbH").get('results')
