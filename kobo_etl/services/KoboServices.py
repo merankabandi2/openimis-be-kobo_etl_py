@@ -15,6 +15,22 @@ from typing import List, Dict, Any, Tuple, Optional, Set
 
 logger = logging.getLogger(__name__)
 
+GRIEVANCE_V1_FORM = "aeAgbxjy7d6rD8jtUdMD9Z"
+GRIEVANCE_V2_FORM = "atpoVbHXZCdLD9ETHTv6z4"
+TRAINING_FORM = "a77BL33LXCfAVovg4seMbH"
+PROMOTION_FORM = "aMzfPosq2VNg3fHdpBJ3jU"
+MICRO_PROJECT_FORM = "aGMbKXkL2XUhtUAmEf95es"
+MONETARY_TRANSFER_FORM = "ayK8Y5yP3MPTYQ3cPcpj9N"
+
+# KoBo forms read by each runKoboEtl scope.
+SCOPE_FORMS = {
+    'grievance': (GRIEVANCE_V1_FORM, GRIEVANCE_V2_FORM),
+    'training': (TRAINING_FORM,),
+    'promotion': (PROMOTION_FORM,),
+    'micro_project': (MICRO_PROJECT_FORM,),
+    'monetary_transfer': (MONETARY_TRANSFER_FORM,),
+}
+
 def bulk_upsert(model_class, data_list: List[Dict[Any, Any]], 
                 lookup_field: str = "id", update_fields: Optional[List[str]] = None, 
                 chunk_size: int = 1000) -> Tuple[int, int]:
@@ -158,11 +174,15 @@ def sync_grievance(startDate, stopDate):
     # update_fields=[] means: insert new records only, never overwrite existing ones.
     # Once a ticket is in the system, local changes (status, workflow, resolution) own it.
     try:
-        koboFormData = get("aeAgbxjy7d6rD8jtUdMD9Z").get('results', [])
+        koboFormData = get(GRIEVANCE_V1_FORM).get('results', [])
         if koboFormData:
             items = GrievanceConverter.to_data_set_obj(koboFormData)
-            bulk_upsert(model_class=Ticket, data_list=items, update_fields=[])
-            logger.info(f"Synced {len(items)} grievances from old form (v1)")
+            # With no update field, bulk_upsert's updated count is always 0: the
+            # submissions skipped are those whose ticket already exists.
+            existing = Ticket.objects.filter(id__in=[i.id for i in items if i.id]).count()
+            created, _ = bulk_upsert(model_class=Ticket, data_list=items, update_fields=[])
+            logger.info(f"Synced v1: {created} created, {existing} skipped (existing), "
+                        f"{len(koboFormData)} submissions")
     except Exception as e:
         logger.error(f"Failed to sync old grievance form: {e}", exc_info=True)
         failures.append(f"v1: {e}")
@@ -171,7 +191,7 @@ def sync_grievance(startDate, stopDate):
     # Uses same bulk_upsert pattern as v1, then creates workflows after
     try:
         from merankabandi.converters.grievance_converter_v2 import GrievanceConverterV2
-        new_kobo_data = get("atpoVbHXZCdLD9ETHTv6z4").get('results', [])
+        new_kobo_data = get(GRIEVANCE_V2_FORM).get('results', [])
         if new_kobo_data:
             created, updated, wf_count = GrievanceConverterV2.import_batch(new_kobo_data)
             logger.info(f"Synced v2: {created} new, {updated} updated, {wf_count} workflows")
@@ -183,7 +203,7 @@ def sync_grievance(startDate, stopDate):
         raise KoboSyncError(f"Grievance sync failed: {'; '.join(failures)}")
 
 def sync_training(startDate, stopDate):
-    koboFormData = get("a77BL33LXCfAVovg4seMbH").get('results')
+    koboFormData = get(TRAINING_FORM).get('results')
     items = SensitizationTrainingConverter.to_data_set_obj(koboFormData)
     bulk_upsert(
         model_class=SensitizationTraining,
@@ -192,7 +212,7 @@ def sync_training(startDate, stopDate):
     return
 
 def sync_bcpromotion(startDate, stopDate):
-    koboFormData = get("aMzfPosq2VNg3fHdpBJ3jU").get('results')
+    koboFormData = get(PROMOTION_FORM).get('results')
     items = BehaviorChangePromotionConverter.to_data_set_obj(koboFormData)
     bulk_upsert(
         model_class=BehaviorChangePromotion,
@@ -201,7 +221,7 @@ def sync_bcpromotion(startDate, stopDate):
     return
 
 def sync_micro_project(startDate, stopDate):
-    koboFormData = get("aGMbKXkL2XUhtUAmEf95es").get('results')
+    koboFormData = get(MICRO_PROJECT_FORM).get('results')
     items = MicroProjectConverter.to_data_set_obj(koboFormData)
     bulk_upsert(
         model_class=MicroProject,
@@ -210,7 +230,7 @@ def sync_micro_project(startDate, stopDate):
     return
 
 def sync_monetary_transfer(startDate, stopDate):
-    koboFormData = get("ayK8Y5yP3MPTYQ3cPcpj9N").get('results')
+    koboFormData = get(MONETARY_TRANSFER_FORM).get('results')
     items = MonetaryTransferConverter.to_data_set_obj(koboFormData)
     bulk_upsert(
         model_class=MonetaryTransfer,

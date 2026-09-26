@@ -5,20 +5,31 @@ from django.utils.translation import gettext as _
 from django.core.exceptions import PermissionDenied
 from core.models import MutationLog
 from kobo_etl.apps import KoboConfig, RUN_ETL_MUTATION_LOG_TAG
+from kobo_etl.strategy import kobo_client
+
+
+def _etl_forms():
+    from kobo_etl.services.KoboServices import SCOPE_FORMS
+    return [uid for uids in SCOPE_FORMS.values() for uid in uids]
 
 
 class KoboETLStatusType(graphene.ObjectType):
     """
     Type for returning Kobo ETL status information
     """
-    is_configured = graphene.Boolean()
+    is_configured = graphene.Boolean(
+        description="Every KoBo form read by the ETL resolves a token and a base URL")
+    is_reachable = graphene.Boolean(
+        description="KoBo answers an authenticated request for the forms read by the ETL")
     has_token = graphene.Boolean()
     available_scopes = graphene.List(graphene.String)
     last_sync_date = graphene.DateTime()
     
     def resolve_is_configured(self, info):
-        from django.conf import settings
-        return hasattr(settings, 'TOKEN_KOBO')
+        return kobo_client.is_configured(_etl_forms())
+
+    def resolve_is_reachable(self, info):
+        return kobo_client.is_reachable(_etl_forms())
     
     def resolve_has_token(self, info):
         from django.conf import settings
