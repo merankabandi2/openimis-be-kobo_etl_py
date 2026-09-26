@@ -96,3 +96,39 @@ class SyncGrievanceV1ResolutionTest(TestCase):
         self.assertEqual(len(tickets), 2)
         self.assertEqual(tickets[vbg['_uuid']].resolution, '2,0')
         self.assertEqual(tickets[other['_uuid']].resolution, '5,0')
+
+
+class SyncGrievanceV1CountLogTest(TestCase):
+    """The v1 sync log line counts the tickets created and the submissions
+    skipped because their ticket already exists."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = create_test_interactive_user(username="kobo_v1_count")
+
+    def setUp(self):
+        patcher = mock.patch.dict('os.environ', {'KOBO_IMPORT_USERNAME': self.user.username})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _sync_lines(self, submissions):
+        with mock.patch("kobo_etl.services.KoboServices.get") as kobo_get, \
+                self.assertLogs('kobo_etl.services.KoboServices', level='INFO') as logs:
+            kobo_get.side_effect = lambda uid: {"count": len(submissions), "results": submissions} \
+                if uid == V1_FORM else {"count": 0, "results": []}
+            KoboServices.sync_grievance(None, None)
+        return [line for line in logs.output if 'v1' in line]
+
+    def test_first_sync_counts_created_tickets(self):
+        lines = self._sync_lines([_v1_submission(), _v1_submission()])
+        self.assertEqual(len(lines), 1)
+        self.assertIn('Synced v1: 2 created, 0 skipped (existing), 2 submissions', lines[0])
+
+    def test_second_sync_counts_existing_tickets_as_skipped(self):
+        known = _v1_submission()
+        self._sync_lines([known])
+
+        lines = self._sync_lines([known, _v1_submission()])
+
+        self.assertEqual(len(lines), 1)
+        self.assertIn('Synced v1: 1 created, 1 skipped (existing), 2 submissions', lines[0])

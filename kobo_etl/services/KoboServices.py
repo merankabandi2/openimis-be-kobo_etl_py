@@ -177,8 +177,12 @@ def sync_grievance(startDate, stopDate):
         koboFormData = get(GRIEVANCE_V1_FORM).get('results', [])
         if koboFormData:
             items = GrievanceConverter.to_data_set_obj(koboFormData)
-            bulk_upsert(model_class=Ticket, data_list=items, update_fields=[])
-            logger.info(f"Synced {len(items)} grievances from old form (v1)")
+            # With no update field, bulk_upsert's updated count is always 0: the
+            # submissions skipped are those whose ticket already exists.
+            existing = Ticket.objects.filter(id__in=[i.id for i in items if i.id]).count()
+            created, _ = bulk_upsert(model_class=Ticket, data_list=items, update_fields=[])
+            logger.info(f"Synced v1: {created} created, {existing} skipped (existing), "
+                        f"{len(koboFormData)} submissions")
     except Exception as e:
         logger.error(f"Failed to sync old grievance form: {e}", exc_info=True)
         failures.append(f"v1: {e}")
