@@ -10,6 +10,8 @@ DEFAULT_BASE_URL = os.environ.get('KOBO_BASE_URL', 'https://kf.kobotoolbox.org')
 PARAMS = {
     'format': 'json'
 }
+# (connect, read) seconds for the status probe, which runs while the admin page loads.
+PROBE_TIMEOUT = (5, 10)
 
 
 def _get_form_config(kobo_asset_uid):
@@ -28,6 +30,36 @@ def _get_form_config(kobo_asset_uid):
     token = os.environ.get(f'KOBO_TOKEN_{kobo_asset_uid}', TOKEN)
     base_url = os.environ.get(f'KOBO_URL_{kobo_asset_uid}', DEFAULT_BASE_URL)
     return token, base_url
+
+
+def is_configured(kobo_asset_uids):
+    """True when every form resolves a non-empty token and base URL."""
+    return all(all(_get_form_config(uid)) for uid in kobo_asset_uids)
+
+
+def is_reachable(kobo_asset_uids):
+    """True when KoBo answers a data request (limit 1) for one form of each distinct (base URL, token).
+
+    The request carries the token, so a rejected token counts as unreachable.
+    """
+    if not is_configured(kobo_asset_uids):
+        return False
+    probes = {}
+    for uid in kobo_asset_uids:
+        probes.setdefault(_get_form_config(uid), uid)
+    for (token, base_url), uid in probes.items():
+        try:
+            response = requests.get(
+                url=f'{base_url}/api/v2/assets/{uid}/data',
+                params={**PARAMS, 'limit': 1},
+                headers={'Authorization': f'Token {token}'},
+                timeout=PROBE_TIMEOUT,
+            )
+            response.raise_for_status()
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"KoBo connection check of {uid} on {base_url} failed: {e}")
+            return False
+    return True
 
 
 class KoboFetchError(Exception):
