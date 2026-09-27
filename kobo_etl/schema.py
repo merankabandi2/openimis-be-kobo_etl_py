@@ -3,13 +3,28 @@ from core import ExtendedConnection
 from core.models import MutationLog
 from core.schema import OpenIMISMutation, signal_mutation_module_before_mutating
 from django.contrib.auth.models import AnonymousUser
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.utils.translation import gettext as _
 from .apps import KoboConfig, MODULE_NAME, RUN_ETL_MUTATION_CLASS, RUN_ETL_MUTATION_LOG_TAG
 from .gql_queries import Query
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Messages of the MutationLog.error entries. The exception text can hold KoBo URLs and
+# database row values, so it only goes to the server log; the entry keeps the scope
+# and the exception class.
+KOBO_ETL_FAILED_MESSAGE = "KoBo ETL sync failed"
+KOBO_ETL_UNAUTHORIZED_MESSAGE = "Unauthorized: the user may not run the KoBo ETL"
+
+
+def _failure(exc, scope=None):
+    """MutationLog.error entry: detail is '<scope>: <exception class>', the scope prefix the FE parses."""
+    exc_class = type(exc).__name__
+    return {
+        'message': KOBO_ETL_UNAUTHORIZED_MESSAGE if isinstance(exc, PermissionDenied) else KOBO_ETL_FAILED_MESSAGE,
+        'detail': f"{scope}: {exc_class}" if scope else exc_class,
+    }
 
 
 class KoboETLScopeEnum(graphene.Enum):
@@ -38,11 +53,11 @@ class RunKoboETLMutation(OpenIMISMutation):
     def async_mutate(cls, user, **data):
         try:
             if type(user) is AnonymousUser or not user.id:
-                raise ValidationError(_("mutation.authentication_required"))
+                raise PermissionDenied(_("mutation.authentication_required"))
 
             # Check permissions - user should have appropriate rights
             if not user.has_perms(KoboConfig.gql_mutation_run_kobo_etl_perms):
-                raise ValidationError(_("unauthorized"))
+                raise PermissionDenied(_("unauthorized"))
 
             # Import here to avoid circular imports
             from kobo_etl.services.KoboServices import (
@@ -78,10 +93,7 @@ class RunKoboETLMutation(OpenIMISMutation):
                     syncs[name](start_date, end_date)
                 except Exception as exc:
                     logger.error(f"Kobo ETL sync '{name}' failed: {exc}", exc_info=True)
-                    errors.append({
-                        'message': _("kobo_etl.mutation.failed"),
-                        'detail': f"{name}: {exc}",
-                    })
+                    errors.append(_failure(exc, name))
 
             if errors:
                 return errors
@@ -89,11 +101,8 @@ class RunKoboETLMutation(OpenIMISMutation):
             return None
 
         except Exception as exc:
-            logger.error(f"Error in Kobo ETL mutation: {exc}")
-            return [{
-                'message': _("kobo_etl.mutation.failed"),
-                'detail': str(exc)
-            }]
+            logger.error(f"Error in Kobo ETL mutation: {exc}", exc_info=True)
+            return [_failure(exc, data.get('scope'))]
 
 
 class Mutation(graphene.ObjectType):
