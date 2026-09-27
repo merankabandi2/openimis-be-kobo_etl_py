@@ -166,7 +166,10 @@ DB_ROW_TEXT = 'null value in column "code" violates not-null constraint DETAIL: 
 
 
 class RunKoboETLMutationErrorContentTest(TestCase):
-    """MutationLog.error carries a plain message, the scope and the exception class; the text stays in the log."""
+    """MutationLog.error carries a plain message and the exception class; the text stays in the log.
+
+    Only a failed sync prefixes the class with its scope; errors raised before any sync have no scope.
+    """
 
     def _assert_no_exception_text(self, result):
         serialized = json.dumps(result)
@@ -195,7 +198,7 @@ class RunKoboETLMutationErrorContentTest(TestCase):
         self.assertIn("Failing row contains", "\n".join(logs.output))
         self.assertTrue(any(record.exc_info for record in logs.records))
 
-    def test_unexpected_error_returns_scope_and_class_only(self):
+    def test_unexpected_error_before_sync_returns_class_only(self):
         user = _mock_user()
         user.has_perms.side_effect = RuntimeError(f"cannot read rights: {DB_ROW_TEXT}")
 
@@ -206,7 +209,7 @@ class RunKoboETLMutationErrorContentTest(TestCase):
 
         self.assertEqual(result, [{
             "message": KOBO_ETL_FAILED_MESSAGE,
-            "detail": "training: RuntimeError",
+            "detail": "RuntimeError",
         }])
         self._assert_no_exception_text(result)
         self.assertIn("Failing row contains", "\n".join(logs.output))
@@ -222,7 +225,7 @@ class RunKoboETLMutationErrorContentTest(TestCase):
         self.assertEqual(result, [{"message": KOBO_ETL_FAILED_MESSAGE, "detail": "RuntimeError"}])
         self._assert_no_exception_text(result)
 
-    def test_missing_right_returns_scope_and_class_only(self):
+    def test_missing_right_returns_class_only(self):
         user = _mock_user()
         user.has_perms.return_value = False
 
@@ -233,10 +236,10 @@ class RunKoboETLMutationErrorContentTest(TestCase):
 
         self.assertEqual(result, [{
             "message": KOBO_ETL_UNAUTHORIZED_MESSAGE,
-            "detail": "grievance: PermissionDenied",
+            "detail": "PermissionDenied",
         }])
 
-    def test_anonymous_user_returns_scope_and_class_only(self):
+    def test_anonymous_user_returns_class_only(self):
         user = _mock_user()
         user.id = None
 
@@ -247,10 +250,10 @@ class RunKoboETLMutationErrorContentTest(TestCase):
 
         self.assertEqual(result, [{
             "message": KOBO_ETL_UNAUTHORIZED_MESSAGE,
-            "detail": "grievance: PermissionDenied",
+            "detail": "PermissionDenied",
         }])
 
-    def test_invalid_scope_returns_scope_and_class_only(self):
+    def test_invalid_scope_returns_class_only(self):
         with self.assertLogs("kobo_etl.schema", level="ERROR"):
             result = RunKoboETLMutation.async_mutate(
                 _mock_user(), scope="unknown", start_date=None, end_date=None,
@@ -258,5 +261,5 @@ class RunKoboETLMutationErrorContentTest(TestCase):
 
         self.assertEqual(result, [{
             "message": KOBO_ETL_FAILED_MESSAGE,
-            "detail": "unknown: ValidationError",
+            "detail": "ValidationError",
         }])

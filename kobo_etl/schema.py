@@ -12,14 +12,18 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Messages of the MutationLog.error entries. The exception text can hold KoBo URLs and
-# database row values, so it only goes to the server log; the entry keeps the scope
-# and the exception class.
+# database row values, so it only goes to the server log; the entry keeps the exception
+# class, prefixed with the scope when a sync of that scope failed.
 KOBO_ETL_FAILED_MESSAGE = "KoBo ETL sync failed"
 KOBO_ETL_UNAUTHORIZED_MESSAGE = "Unauthorized: the user may not run the KoBo ETL"
 
 
 def _failure(exc, scope=None):
-    """MutationLog.error entry: detail is '<scope>: <exception class>', the scope prefix the FE parses."""
+    """MutationLog.error entry: detail is '<scope>: <exception class>', or the class alone without a scope.
+
+    The FE reads a '<scope>: ' prefix as a failed sync of that scope, so errors raised
+    before any sync runs (refusal, invalid scope) are built without one.
+    """
     exc_class = type(exc).__name__
     return {
         'message': KOBO_ETL_UNAUTHORIZED_MESSAGE if isinstance(exc, PermissionDenied) else KOBO_ETL_FAILED_MESSAGE,
@@ -102,7 +106,7 @@ class RunKoboETLMutation(OpenIMISMutation):
 
         except Exception as exc:
             logger.error(f"Error in Kobo ETL mutation: {exc}", exc_info=True)
-            return [_failure(exc, data.get('scope'))]
+            return [_failure(exc)]
 
 
 class Mutation(graphene.ObjectType):
