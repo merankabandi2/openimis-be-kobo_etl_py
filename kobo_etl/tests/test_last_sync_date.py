@@ -1,4 +1,5 @@
 import datetime
+import json
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -12,7 +13,7 @@ from core.schema import signal_mutation_module_before_mutating
 from core.test_helpers import create_test_interactive_user
 from kobo_etl.apps import RUN_ETL_MUTATION_LOG_TAG
 from kobo_etl.gql_queries import KoboETLStatusType
-from kobo_etl.schema import Mutation, Query, RunKoboETLMutation, bind_signals
+from kobo_etl.schema import KOBO_ETL_FAILED_MESSAGE, Mutation, Query, RunKoboETLMutation, bind_signals
 from kobo_etl.strategy.kobo_client import KoboFetchError
 
 STATUS_QUERY = "{ koboEtlStatus { lastSyncDate } }"
@@ -114,5 +115,8 @@ class LastSyncDateGraphQLTest(TestCase):
 
         log = MutationLog.objects.get(client_mutation_id="kobo-etl-ko")
         self.assertEqual(log.status, MutationLog.ERROR)
-        self.assertIn("KoBo down", log.error)
+        self.assertEqual(
+            json.loads(log.error),
+            [{"message": KOBO_ETL_FAILED_MESSAGE, "detail": "grievance: KoboSyncError"}],
+        )
         self.assertIsNone(self._last_sync_date())

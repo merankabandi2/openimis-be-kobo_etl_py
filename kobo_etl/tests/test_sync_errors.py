@@ -1,9 +1,10 @@
+import json
 from unittest.mock import Mock, patch
 
 import requests
 from django.test import TestCase
 
-from kobo_etl.schema import RunKoboETLMutation
+from kobo_etl.schema import KOBO_ETL_FAILED_MESSAGE, KOBO_ETL_UNAUTHORIZED_MESSAGE, RunKoboETLMutation
 from kobo_etl.services import KoboServices
 from kobo_etl.strategy import kobo_client
 from kobo_etl.strategy.kobo_client import KoboFetchError
@@ -118,8 +119,10 @@ class RunKoboETLMutationFailureTest(TestCase):
             _mock_user(), scope="grievance", start_date=None, end_date=None,
         )
 
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["detail"], "grievance: Grievance sync failed: v2: KoBo down")
+        self.assertEqual(result, [{
+            "message": KOBO_ETL_FAILED_MESSAGE,
+            "detail": "grievance: KoboSyncError",
+        }])
 
     @patch("kobo_etl.services.KoboServices.sync_monetary_transfer")
     @patch("kobo_etl.services.KoboServices.sync_micro_project")
@@ -139,16 +142,124 @@ class RunKoboETLMutationFailureTest(TestCase):
         for sync in (sync_grievance, sync_training, sync_bcpromotion,
                      sync_micro_project, sync_monetary_transfer):
             sync.assert_called_once_with(None, None)
-        self.assertEqual([e["detail"] for e in result], ["training: KoBo down"])
+        self.assertEqual([e["detail"] for e in result], ["training: KoboFetchError"])
 
     @patch("kobo_etl.services.KoboServices.get")
     def test_kobo_unreachable_fails_the_mutation_end_to_end(self, kobo_get):
         kobo_get.side_effect = KoboFetchError("KoBo down")
 
-        result = RunKoboETLMutation.async_mutate(
-            _mock_user(), scope="grievance", start_date=None, end_date=None,
+        with self.assertLogs("kobo_etl.schema", level="ERROR") as logs:
+            result = RunKoboETLMutation.async_mutate(
+                _mock_user(), scope="grievance", start_date=None, end_date=None,
+            )
+
+        self.assertEqual(result, [{
+            "message": KOBO_ETL_FAILED_MESSAGE,
+            "detail": "grievance: KoboSyncError",
+        }])
+        self.assertIn("v1: KoBo down", "\n".join(logs.output))
+        self.assertIn("v2: KoBo down", "\n".join(logs.output))
+
+
+KOBO_URL = "https://kf.kobo.internal.example/api/v2/assets/atpoVbHXZCdLD9ETHTv6z4/data?format=json"
+DB_ROW_TEXT = 'null value in column "code" violates not-null constraint DETAIL: Failing row contains (42, Jean, 79123456)'
+
+
+class RunKoboETLMutationErrorContentTest(TestCase):
+    """MutationLog.error carries a plain message and the exception class; the text stays in the log.
+
+    Only a failed sync prefixes the class with its scope; errors raised before any sync have no scope.
+    """
+
+    def _assert_no_exception_text(self, result):
+        serialized = json.dumps(result)
+        self.assertNotIn("kobo.internal.example", serialized)
+        self.assertNotIn("Failing row contains", serialized)
+        self.assertNotIn("79123456", serialized)
+        for entry in result:
+            self.assertFalse(entry["message"].startswith("kobo_etl."))
+
+    @patch("kobo_etl.services.KoboServices.sync_grievance")
+    def test_sync_failure_returns_scope_and_class_only(self, sync_grievance):
+        sync_grievance.side_effect = KoboServices.KoboSyncError(
+            f"Grievance sync failed: v1: {KOBO_URL} unreachable ; v2: {DB_ROW_TEXT}"
         )
 
-        self.assertEqual(len(result), 1)
-        self.assertIn("v1: KoBo down", result[0]["detail"])
-        self.assertIn("v2: KoBo down", result[0]["detail"])
+        with self.assertLogs("kobo_etl.schema", level="ERROR") as logs:
+            result = RunKoboETLMutation.async_mutate(
+                _mock_user(), scope="grievance", start_date=None, end_date=None,
+            )
+
+        self.assertEqual(result, [{
+            "message": KOBO_ETL_FAILED_MESSAGE,
+            "detail": "grievance: KoboSyncError",
+        }])
+        self._assert_no_exception_text(result)
+        self.assertIn("Failing row contains", "\n".join(logs.output))
+        self.assertTrue(any(record.exc_info for record in logs.records))
+
+    def test_unexpected_error_before_sync_returns_class_only(self):
+        user = _mock_user()
+        user.has_perms.side_effect = RuntimeError(f"cannot read rights: {DB_ROW_TEXT}")
+
+        with self.assertLogs("kobo_etl.schema", level="ERROR") as logs:
+            result = RunKoboETLMutation.async_mutate(
+                user, scope="training", start_date=None, end_date=None,
+            )
+
+        self.assertEqual(result, [{
+            "message": KOBO_ETL_FAILED_MESSAGE,
+            "detail": "RuntimeError",
+        }])
+        self._assert_no_exception_text(result)
+        self.assertIn("Failing row contains", "\n".join(logs.output))
+        self.assertTrue(any(record.exc_info for record in logs.records))
+
+    def test_unexpected_error_without_scope_returns_class_only(self):
+        user = _mock_user()
+        user.has_perms.side_effect = RuntimeError(DB_ROW_TEXT)
+
+        with self.assertLogs("kobo_etl.schema", level="ERROR"):
+            result = RunKoboETLMutation.async_mutate(user, start_date=None, end_date=None)
+
+        self.assertEqual(result, [{"message": KOBO_ETL_FAILED_MESSAGE, "detail": "RuntimeError"}])
+        self._assert_no_exception_text(result)
+
+    def test_missing_right_returns_class_only(self):
+        user = _mock_user()
+        user.has_perms.return_value = False
+
+        with self.assertLogs("kobo_etl.schema", level="ERROR"):
+            result = RunKoboETLMutation.async_mutate(
+                user, scope="grievance", start_date=None, end_date=None,
+            )
+
+        self.assertEqual(result, [{
+            "message": KOBO_ETL_UNAUTHORIZED_MESSAGE,
+            "detail": "PermissionDenied",
+        }])
+
+    def test_anonymous_user_returns_class_only(self):
+        user = _mock_user()
+        user.id = None
+
+        with self.assertLogs("kobo_etl.schema", level="ERROR"):
+            result = RunKoboETLMutation.async_mutate(
+                user, scope="grievance", start_date=None, end_date=None,
+            )
+
+        self.assertEqual(result, [{
+            "message": KOBO_ETL_UNAUTHORIZED_MESSAGE,
+            "detail": "PermissionDenied",
+        }])
+
+    def test_invalid_scope_returns_class_only(self):
+        with self.assertLogs("kobo_etl.schema", level="ERROR"):
+            result = RunKoboETLMutation.async_mutate(
+                _mock_user(), scope="unknown", start_date=None, end_date=None,
+            )
+
+        self.assertEqual(result, [{
+            "message": KOBO_ETL_FAILED_MESSAGE,
+            "detail": "ValidationError",
+        }])
