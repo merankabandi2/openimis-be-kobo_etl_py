@@ -7,8 +7,8 @@ MODULE_NAME = "kobo_etl"
 logger = logging.getLogger(__name__)
 
 DEFAULT_CFG = {
-    "gql_query_kobo_etl_status_perms": ["181001"],
-    "gql_mutation_run_kobo_etl_perms": ["181002"],
+    "gql_query_kobo_etl_status_perms": ["804001"],
+    "gql_mutation_run_kobo_etl_perms": ["804002"],
 }
 
 # MutationLog has no module or class column: RunKoboETLMutation logs are tagged in json_ext

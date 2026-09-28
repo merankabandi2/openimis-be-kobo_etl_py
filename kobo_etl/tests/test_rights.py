@@ -26,6 +26,10 @@ class KoboEtlRightCodesTest(TestCase):
         self.assertEqual(kobo_perms.get("gql_query_kobo_etl_status_perms"), KoboConfig.gql_query_kobo_etl_status_perms)
         self.assertEqual(kobo_perms.get("gql_mutation_run_kobo_etl_perms"), KoboConfig.gql_mutation_run_kobo_etl_perms)
 
+    def test_rights_are_804001_and_804002(self):
+        self.assertEqual(KoboConfig.gql_query_kobo_etl_status_perms, ["804001"])
+        self.assertEqual(KoboConfig.gql_mutation_run_kobo_etl_perms, ["804002"])
+
     def test_rights_are_not_shared_with_another_module(self):
         kobo_codes = set(KoboConfig.gql_query_kobo_etl_status_perms + KoboConfig.gql_mutation_run_kobo_etl_perms)
         for app, app_perms in collect_all_gql_permissions().items():
