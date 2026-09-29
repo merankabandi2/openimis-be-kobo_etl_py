@@ -10,6 +10,7 @@ from kobo_etl.builders.kobo.MonetaryTransferConverter import MonetaryTransferCon
 from kobo_etl.builders.kobo.MicroProjectConverter import MicroProjectConverter
 from kobo_etl.builders.kobo.GrievanceConverter import GrievanceConverter
 from kobo_etl.strategy.kobo_client import *
+from django.db import transaction
 from django.db.models import F
 from typing import List, Dict, Any, Tuple, Optional, Set
 
@@ -190,10 +191,14 @@ def sync_bcpromotion(startDate, stopDate):
 def sync_micro_project(startDate, stopDate):
     koboFormData = get("aGMbKXkL2XUhtUAmEf95es").get('results')
     items = MicroProjectConverter.to_data_set_obj(koboFormData)
-    bulk_upsert(
-        model_class=MicroProject,
-        data_list=items
-    )
+    # The converter returns unsaved micro-projects; their « Autre projet » rows are
+    # rewritten once the micro-projects exist, in the same transaction.
+    with transaction.atomic():
+        bulk_upsert(
+            model_class=MicroProject,
+            data_list=items
+        )
+        MicroProject.replace_other_project_types(items)
     return
 
 def sync_monetary_transfer(startDate, stopDate):
