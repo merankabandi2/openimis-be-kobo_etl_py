@@ -91,7 +91,7 @@ class SyncGrievanceFailureTest(TestCase):
     @patch("merankabandi.converters.grievance_converter_v2.GrievanceConverterV2.import_batch")
     @patch("kobo_etl.services.KoboServices.get")
     def test_v2_import_error_raises(self, kobo_get, import_batch):
-        kobo_get.side_effect = lambda uid: {"count": 1, "results": [{"_id": 1}]} if uid == V2_FORM \
+        kobo_get.side_effect = lambda uid, **kwargs: {"count": 1, "results": [{"_id": 1}]} if uid == V2_FORM \
             else {"count": 0, "results": []}
         import_batch.side_effect = RuntimeError("bad row")
 
@@ -105,7 +105,7 @@ class SyncGrievanceFailureTest(TestCase):
     def test_empty_forms_succeed(self, kobo_get):
         kobo_get.return_value = {"count": 0, "results": []}
 
-        self.assertIsNone(KoboServices.sync_grievance(None, None))
+        self.assertEqual(KoboServices.sync_grievance(None, None), KoboServices.SyncResult())
 
 
 class RunKoboETLMutationFailureTest(TestCase):

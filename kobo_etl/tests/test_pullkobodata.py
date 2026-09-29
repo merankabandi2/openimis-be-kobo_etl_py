@@ -1,22 +1,9 @@
 import argparse
-import ast
-import inspect
-import textwrap
 
 from django.test import TestCase
 
 from kobo_etl.management.commands.pullkobodata import Command
-
-
-def _dispatcher_scope_keys():
-    """Extract the match/case literal keys handled by Command.sync_kobo, except the wildcard."""
-    source = textwrap.dedent(inspect.getsource(Command.sync_kobo))
-    tree = ast.parse(source)
-    return {
-        node.value.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.MatchValue) and isinstance(node.value, ast.Constant)
-    }
+from kobo_etl.services.KoboServices import SCOPE_SYNCS
 
 
 def _scope_choices():
@@ -29,12 +16,5 @@ def _scope_choices():
 
 
 class PullKoboDataChoicesTest(TestCase):
-    def test_choices_include_every_dispatcher_key(self):
-        dispatcher_keys = _dispatcher_scope_keys()
-        choices = _scope_choices()
-
-        self.assertTrue(dispatcher_keys, "expected to find case labels in sync_kobo")
-        self.assertTrue(
-            dispatcher_keys.issubset(choices),
-            f"argparse choices {choices} are missing dispatcher keys {dispatcher_keys - choices}",
-        )
+    def test_choices_are_all_and_every_sync_scope(self):
+        self.assertEqual(_scope_choices(), {"all", *SCOPE_SYNCS})
