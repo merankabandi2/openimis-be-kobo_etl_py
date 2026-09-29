@@ -87,7 +87,7 @@ class SyncGrievanceV1ResolutionTest(TestCase):
     def test_imported_v1_ticket_has_resolution(self, kobo_get):
         vbg = _v1_submission(**{'group_categorie/categories_sensibles': 'violence_vbg'})
         other = _v1_submission()
-        kobo_get.side_effect = lambda uid: {"count": 2, "results": [vbg, other]} if uid == V1_FORM \
+        kobo_get.side_effect = lambda uid, **kwargs: {"count": 2, "results": [vbg, other]} if uid == V1_FORM \
             else {"count": 0, "results": []}
 
         KoboServices.sync_grievance(None, None)
@@ -114,7 +114,7 @@ class SyncGrievanceV1CountLogTest(TestCase):
     def _sync_lines(self, submissions):
         with mock.patch("kobo_etl.services.KoboServices.get") as kobo_get, \
                 self.assertLogs('kobo_etl.services.KoboServices', level='INFO') as logs:
-            kobo_get.side_effect = lambda uid: {"count": len(submissions), "results": submissions} \
+            kobo_get.side_effect = lambda uid, **kwargs: {"count": len(submissions), "results": submissions} \
                 if uid == V1_FORM else {"count": 0, "results": []}
             KoboServices.sync_grievance(None, None)
         return [line for line in logs.output if 'v1' in line]

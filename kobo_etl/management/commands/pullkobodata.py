@@ -1,16 +1,27 @@
 import datetime
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from kobo_etl.management.utiils import set_logger
 
-from kobo_etl.services.KoboServices import *
+from kobo_etl.services.KoboServices import DRY_RUN_SCOPES, run_syncs
 
 logger = set_logger()
+
+# Scopes run by "all", in this order.
+ALL_SCOPES = ["grievance", "training", "promotion", "micro_project", "monetary_transfer"]
+
+
+def _date(value):
+    try:
+        return datetime.date.fromisoformat(value)
+    except ValueError:
+        raise CommandError(f"Invalid date {value!r}, expected YYYY-MM-DD")
 
 
 class Command(BaseCommand):
     help = (
-        "This command will download the data from kobo and save it in Django models."
+        "Download the submissions of the KoBo forms of a scope and upsert them in the MIS tables. "
+        "Exits with status 1 when any scope fails."
     )
 
     def add_arguments(self, parser):
@@ -20,62 +31,46 @@ class Command(BaseCommand):
             dest="verbose",
             help="Be verbose about what it is doing",
         )
-        # parser.add_argument(
-        #     "start_date",
-        #     nargs=1,
-        #     type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d"),
-        #     required=False
-        # )
-        # parser.add_argument(
-        #     "stop_date",
-        #     nargs=1,
-        #     type=lambda s: datetime.datetime.strptime(s, "%Y-%m-%d"),
-        #     required=False
-        # )
         parser.add_argument(
             "scope",
             nargs=1,
-            choices=[
-                "all",
-                "grievance",
-                "training",
-                "promotion",
-                "micro_project",
-                "monetary_transfer",
-            ],
+            choices=["all", *ALL_SCOPES],
+        )
+        parser.add_argument(
+            "--from",
+            dest="start_date",
+            help="First KoBo submission day (_submission_time, UTC), YYYY-MM-DD, included",
+        )
+        parser.add_argument(
+            "--to",
+            dest="end_date",
+            help="Last KoBo submission day (_submission_time, UTC), YYYY-MM-DD, included",
+        )
+        parser.add_argument(
+            "--dry-run",
+            action="store_true",
+            dest="dry_run",
+            help=f"Fetch and convert without writing; available for {', '.join(DRY_RUN_SCOPES)}",
         )
 
     def handle(self, *args, **options):
-        # start_date = options["start_date"][0]
-        # stop_date = options["stop_date"][0]
-        start_date = None
-        stop_date = None
         scope = options["scope"][0]
-        if scope is None:
-            scope = "all"
-        logger.info("Start sync Kobo %s ", __package__)
-        self.sync_kobo(start_date, stop_date, scope)
-        logger.info("sync Kobo done")
+        start_date = _date(options["start_date"]) if options.get("start_date") else None
+        end_date = _date(options["end_date"]) if options.get("end_date") else None
+        if start_date and end_date and start_date > end_date:
+            raise CommandError("--from must not be after --to")
+        dry_run = options.get("dry_run", False)
+        scopes = ALL_SCOPES if scope == "all" else [scope]
+        if dry_run and any(s not in DRY_RUN_SCOPES for s in scopes):
+            raise CommandError(f"--dry-run is available for {', '.join(DRY_RUN_SCOPES)} only")
 
-    def sync_kobo(self, start_date, stop_date, scope):
-        logger.info("Received task")
-        match scope:
-            case "grievance":
-                sync_grievance(start_date, stop_date)
-            case "training":
-                sync_training(start_date, stop_date)
-            case "promotion":
-                sync_bcpromotion(start_date, stop_date)
-            case "micro_project":
-                sync_micro_project(start_date, stop_date)
-            case "monetary_transfer":
-                sync_monetary_transfer(start_date, stop_date)
-            case "all":
-                sync_grievance(start_date, stop_date)
-                sync_training(start_date, stop_date)
-                sync_bcpromotion(start_date, stop_date)
-                sync_micro_project(start_date, stop_date)
-                sync_monetary_transfer(start_date, stop_date)
-            case _:
-                logger.warning("Unknown scope: %s", scope)
-        logger.info("Finishing task")
+        logger.info("Start sync Kobo %s from %s to %s%s", scope, start_date or "-", end_date or "-",
+                    " (dry run)" if dry_run else "")
+        results, failures = run_syncs(scopes, start_date, end_date, dry_run=dry_run)
+        for name, result in results.items():
+            self.stdout.write(f"{name}: {result}")
+        for name, exc in failures.items():
+            self.stderr.write(f"{name}: FAILED ({type(exc).__name__}: {exc})")
+        if failures:
+            raise CommandError(f"KoBo sync failed for: {', '.join(failures)}")
+        logger.info("sync Kobo done")

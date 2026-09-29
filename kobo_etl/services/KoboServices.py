@@ -10,6 +10,10 @@ from kobo_etl.builders.kobo.MonetaryTransferConverter import MonetaryTransferCon
 from kobo_etl.builders.kobo.MicroProjectConverter import MicroProjectConverter
 from kobo_etl.builders.kobo.GrievanceConverter import GrievanceConverter
 from kobo_etl.strategy.kobo_client import *
+from contextlib import nullcontext
+from dataclasses import dataclass
+
+from django.db import transaction
 from django.db.models import F
 from typing import List, Dict, Any, Tuple, Optional, Set
 
@@ -163,24 +167,91 @@ class KoboSyncError(Exception):
     """Raised when one or more parts of a KoBo sync failed."""
 
 
-def sync_grievance(startDate, stopDate):
+# Columns written in the MIS after import (activity validation): a re-sync never overwrites them.
+LOCALLY_OWNED_FIELDS = ('validation_status', 'validated_by', 'validation_date', 'validation_comment')
+
+# Scopes whose conversion writes nothing, so a dry run can classify their submissions.
+DRY_RUN_SCOPES = ('training', 'promotion', 'micro_project', 'monetary_transfer')
+
+
+@dataclass
+class SyncResult:
+    fetched: int = 0
+    created: int = 0
+    updated: int = 0
+    skipped: int = 0
+    dry_run: bool = False
+
+    def __str__(self):
+        verb = "would be " if self.dry_run else ""
+        return (f"{self.fetched} submissions fetched, {self.created} {verb}created, "
+                f"{self.updated} {verb}updated, {self.skipped} skipped")
+
+
+def kobo_owned_fields(model_class) -> List[str]:
+    """Fields a re-sync overwrites: every non-pk field except LOCALLY_OWNED_FIELDS."""
+    return [f for f in _get_model_fields(model_class) if f not in LOCALLY_OWNED_FIELDS]
+
+
+def _count_existing(model_class, items, chunk_size=1000) -> int:
+    ids = [item.id for item in items]
+    return sum(
+        model_class.objects.filter(id__in=ids[i:i + chunk_size]).count()
+        for i in range(0, len(ids), chunk_size)
+    )
+
+
+def _sync_activity(scope, form_uid, converter, model_class, start_date, end_date,
+                   dry_run=False, after_upsert=None) -> SyncResult:
+    """Fetch one activity form and upsert its submissions by KoBo _uuid.
+
+    Submissions the converter drops (colline code without a MIS location) are counted as skipped.
+    after_upsert(items), when given, runs in one transaction with the upsert.
+    """
+    submissions = get(form_uid, start_date=start_date, end_date=end_date).get('results', [])
+    items = converter.to_data_set_obj(submissions)
+    result = SyncResult(fetched=len(submissions), skipped=len(submissions) - len(items), dry_run=dry_run)
+    if result.skipped:
+        logger.warning(f"{scope}: {result.skipped} of {result.fetched} KoBo submissions skipped "
+                       f"(no MIS location for their colline code)")
+    if dry_run:
+        result.updated = _count_existing(model_class, items)
+        result.created = len(items) - result.updated
+        return result
+    with transaction.atomic() if after_upsert else nullcontext():
+        result.created, result.updated = bulk_upsert(
+            model_class=model_class, data_list=items, update_fields=kobo_owned_fields(model_class),
+        )
+        if after_upsert:
+            after_upsert(items)
+    logger.info(f"{scope}: {result}")
+    return result
+
+
+def sync_grievance(startDate, stopDate, dry_run=False):
     """Import both KoBo grievance forms; each form is attempted even if the other fails.
 
     Raises KoboSyncError naming every form that failed.
     """
+    if dry_run:
+        raise KoboSyncError("Dry run is not available for grievance: its import creates workflows")
     failures = []
+    result = SyncResult()
 
     # Old form (v1) — legacy, still active for historical data
     # update_fields=[] means: insert new records only, never overwrite existing ones.
     # Once a ticket is in the system, local changes (status, workflow, resolution) own it.
     try:
-        koboFormData = get(GRIEVANCE_V1_FORM).get('results', [])
+        koboFormData = get(GRIEVANCE_V1_FORM, start_date=startDate, end_date=stopDate).get('results', [])
+        result.fetched += len(koboFormData)
         if koboFormData:
             items = GrievanceConverter.to_data_set_obj(koboFormData)
             # With no update field, bulk_upsert's updated count is always 0: the
             # submissions skipped are those whose ticket already exists.
             existing = Ticket.objects.filter(id__in=[i.id for i in items if i.id]).count()
             created, _ = bulk_upsert(model_class=Ticket, data_list=items, update_fields=[])
+            result.created += created
+            result.skipped += existing
             logger.info(f"Synced v1: {created} created, {existing} skipped (existing), "
                         f"{len(koboFormData)} submissions")
     except Exception as e:
@@ -191,9 +262,12 @@ def sync_grievance(startDate, stopDate):
     # Uses same bulk_upsert pattern as v1, then creates workflows after
     try:
         from merankabandi.converters.grievance_converter_v2 import GrievanceConverterV2
-        new_kobo_data = get(GRIEVANCE_V2_FORM).get('results', [])
+        new_kobo_data = get(GRIEVANCE_V2_FORM, start_date=startDate, end_date=stopDate).get('results', [])
+        result.fetched += len(new_kobo_data)
         if new_kobo_data:
             created, updated, wf_count = GrievanceConverterV2.import_batch(new_kobo_data)
+            result.created += created
+            result.updated += updated
             logger.info(f"Synced v2: {created} new, {updated} updated, {wf_count} workflows")
     except Exception as e:
         logger.error(f"Failed to sync new grievance form: {e}", exc_info=True)
@@ -201,42 +275,48 @@ def sync_grievance(startDate, stopDate):
 
     if failures:
         raise KoboSyncError(f"Grievance sync failed: {'; '.join(failures)}")
+    return result
 
-def sync_training(startDate, stopDate):
-    koboFormData = get(TRAINING_FORM).get('results')
-    items = SensitizationTrainingConverter.to_data_set_obj(koboFormData)
-    bulk_upsert(
-        model_class=SensitizationTraining,
-        data_list=items
-    )
-    return
+def sync_training(startDate, stopDate, dry_run=False):
+    return _sync_activity('training', TRAINING_FORM, SensitizationTrainingConverter,
+                          SensitizationTraining, startDate, stopDate, dry_run)
 
-def sync_bcpromotion(startDate, stopDate):
-    koboFormData = get(PROMOTION_FORM).get('results')
-    items = BehaviorChangePromotionConverter.to_data_set_obj(koboFormData)
-    bulk_upsert(
-        model_class=BehaviorChangePromotion,
-        data_list=items
-    )
-    return
+def sync_bcpromotion(startDate, stopDate, dry_run=False):
+    return _sync_activity('promotion', PROMOTION_FORM, BehaviorChangePromotionConverter,
+                          BehaviorChangePromotion, startDate, stopDate, dry_run)
 
-def sync_micro_project(startDate, stopDate):
-    koboFormData = get(MICRO_PROJECT_FORM).get('results')
-    items = MicroProjectConverter.to_data_set_obj(koboFormData)
-    bulk_upsert(
-        model_class=MicroProject,
-        data_list=items
-    )
-    return
+def sync_micro_project(startDate, stopDate, dry_run=False):
+    return _sync_activity('micro_project', MICRO_PROJECT_FORM, MicroProjectConverter,
+                          MicroProject, startDate, stopDate, dry_run,
+                          after_upsert=MicroProject.replace_other_project_types)
 
-def sync_monetary_transfer(startDate, stopDate):
-    koboFormData = get(MONETARY_TRANSFER_FORM).get('results')
-    items = MonetaryTransferConverter.to_data_set_obj(koboFormData)
-    bulk_upsert(
-        model_class=MonetaryTransfer,
-        data_list=items
-    )
-    return
+def sync_monetary_transfer(startDate, stopDate, dry_run=False):
+    return _sync_activity('monetary_transfer', MONETARY_TRANSFER_FORM, MonetaryTransferConverter,
+                          MonetaryTransfer, startDate, stopDate, dry_run)
+
+
+SCOPE_SYNCS = {
+    'grievance': sync_grievance,
+    'training': sync_training,
+    'promotion': sync_bcpromotion,
+    'micro_project': sync_micro_project,
+    'monetary_transfer': sync_monetary_transfer,
+}
+
+
+def run_syncs(scopes, start_date=None, end_date=None, dry_run=False):
+    """Run each scope in turn, a failed scope not stopping the next ones.
+
+    Returns ({scope: SyncResult}, {scope: exception}).
+    """
+    results, failures = {}, {}
+    for scope in scopes:
+        try:
+            results[scope] = SCOPE_SYNCS[scope](start_date, end_date, dry_run=dry_run)
+        except Exception as exc:
+            logger.error(f"KoBo sync '{scope}' failed: {exc}", exc_info=True)
+            failures[scope] = exc
+    return results, failures
 
 def sync_rsu_partial(startDate, stopDate):
     koboFormData = get("a6rTFPVMsQKfYZKmH7RRDL").get('results')

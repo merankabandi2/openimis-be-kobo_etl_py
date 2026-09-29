@@ -1,3 +1,5 @@
+import datetime
+import json
 import logging
 import os
 import requests
@@ -66,10 +68,23 @@ class KoboFetchError(Exception):
     """Raised when a KoBo form cannot be fetched completely."""
 
 
-def get(kobo_asset_uid, **kwargs):
-    """Fetch ALL form data from KoBo API, handling pagination.
+def submission_time_query(start_date=None, end_date=None):
+    """KoBo `query` parameter selecting submissions whose _submission_time (UTC) falls
+    between start_date and end_date, both days included. None when neither is set."""
+    bounds = {}
+    if start_date:
+        bounds['$gte'] = f'{start_date.isoformat()}T00:00:00'
+    if end_date:
+        bounds['$lt'] = f'{(end_date + datetime.timedelta(days=1)).isoformat()}T00:00:00'
+    return json.dumps({'_submission_time': bounds}) if bounds else None
 
-    Returns {"count": N, "results": [...all submissions...]}.
+
+def get(kobo_asset_uid, start_date=None, end_date=None):
+    """Fetch the form data from KoBo API, handling pagination.
+
+    start_date / end_date (datetime.date, both included) restrict the submissions
+    to that _submission_time range; without them every submission is fetched.
+    Returns {"count": N, "results": [...submissions...]}.
     Raises KoboFetchError when any page fails, so a partial result set is never returned.
     """
     token, base_url = _get_form_config(kobo_asset_uid)
@@ -77,6 +92,9 @@ def get(kobo_asset_uid, **kwargs):
     all_results = []
     url = f'{base_url}/api/v2/assets/{kobo_asset_uid}/data'
     params = {**PARAMS}
+    query = submission_time_query(start_date, end_date)
+    if query:
+        params['query'] = query
 
     try:
         while url:
