@@ -39,7 +39,9 @@ def _micro_project(uid=None, colline=KOBO_COLLINE, homme='3'):
         'group_bh77o90/Femme': '5',
         'group_bh77o90/Twa': '0',
         'group_fb09e52/Agriculture': '4',
-        'group_fb09e52/group_mu7lt44': [{'Autre_pr_ciser': 'Couture', 'Effectif': '2'}],
+        'group_fb09e52/group_mu7lt44': [
+            {'group_fb09e52/group_mu7lt44/Autre_pr_ciser': 'Couture', 'group_fb09e52/group_mu7lt44/Effectif': '2'},
+        ],
     }
 
 
@@ -164,6 +166,34 @@ class CrosswalkLocationSyncTest(TestCase):
         training = SensitizationTraining.objects.get(id=data['_uuid'])
         self.assertEqual(training.location, self.colline)
         self.assertEqual((training.validation_status, training.validation_comment), ('VALIDATED', 'ok'))
+
+
+class FormVersionSummaryTest(TestCase):
+
+    def setUp(self):
+        _create_colline()
+
+    @patch('kobo_etl.services.KoboServices.get')
+    def test_sync_logs_the_participant_source_of_each_form_version(self, kobo_get):
+        current = {**_training(), '__version__': 'vEtQUeioPXw3zNjGcL6uHM', 'Hommes': '1', 'Femmes': '50'}
+        for key in ('group_zp4mt03/Nombre_dhommes', 'group_zp4mt03/Nombre_de_femmes', 'group_zp4mt03/Nombre_de_Batwa'):
+            current.pop(key)
+        older = {**_training(), '__version__': 'v3ADWSUyCB34tTRhW5W2nK'}
+        unknown = {**_training(), '__version__': 'vNewLayout000000000000'}
+        for key in ('group_zp4mt03/Nombre_dhommes', 'group_zp4mt03/Nombre_de_femmes', 'group_zp4mt03/Nombre_de_Batwa'):
+            unknown.pop(key)
+        kobo_get.return_value = _kobo([current, older, older | {'_uuid': str(uuid.uuid4())}, unknown])
+
+        with self.assertLogs('kobo_etl.services.KoboServices', level='INFO') as logs:
+            _pull('training')
+
+        output = '\n'.join(logs.output)
+        self.assertIn("training: form version vEtQUeioPXw3zNjGcL6uHM: 1 submissions, participants from root", output)
+        self.assertIn("training: form version v3ADWSUyCB34tTRhW5W2nK: 2 submissions, participants from group_zp4mt03",
+                      output)
+        self.assertIn("WARNING:kobo_etl.services.KoboServices:training: 1 submissions without any known participant "
+                      "field, stored with 0 participants (form versions: vNewLayout000000000000)", output)
+        self.assertEqual(SensitizationTraining.objects.get(id=current['_uuid']).female_participants, 50)
 
 
 class ValidationSurvivesResyncTest(TestCase):
