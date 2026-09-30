@@ -1,12 +1,9 @@
 from django.core.management.base import BaseCommand, CommandError
 from kobo_etl.management.utiils import set_logger
 
-from kobo_etl.services.KoboServices import DRY_RUN_SCOPES, run_syncs
+from kobo_etl.services.KoboServices import ALL_SCOPES, DRY_RUN_SCOPES, SCOPE_SYNCS, run_syncs
 
 logger = set_logger()
-
-# Scopes run by "all", in this order.
-ALL_SCOPES = ["grievance", "training", "promotion", "micro_project", "monetary_transfer"]
 
 
 class Command(BaseCommand):
@@ -25,7 +22,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "scope",
             nargs=1,
-            choices=["all", *ALL_SCOPES],
+            choices=["all", *SCOPE_SYNCS],
         )
         parser.add_argument(
             "--dry-run",
