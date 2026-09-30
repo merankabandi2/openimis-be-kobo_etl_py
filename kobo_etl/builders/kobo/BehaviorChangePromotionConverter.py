@@ -9,4 +9,4 @@ class BehaviorChangePromotionConverter(BaseKoboConverter):
 
     @classmethod
     def to_data_element_obj(cls, koboData, **kwargs):
-        return BehaviorChangePromotion.to_data_element_obj(koboData)
+        return BehaviorChangePromotion.to_data_element_obj(koboData, **kwargs)

@@ -6,22 +6,24 @@ from datetime import datetime
 from core.models import User
 from grievance_social_protection.models import Ticket
 from location.models import Location
+from merankabandi.models import KoboLocationCrosswalk
 
 from . import BaseKoboConverter
 
 
 def _resolve_colline(colline_value):
-    """Resolve a colline value (name or code) to colline_code + location_id."""
+    """Resolve a colline value (name or code) to colline_code + location_id.
+
+    A number is a KoBo colline code, resolved through KoboLocationCrosswalk,
+    or else a MIS colline code.
+    """
     if not colline_value:
         return {}
 
     colline_str = str(colline_value).strip()
 
-    # Try KoBo→openIMIS code conversion
     if colline_str.isdigit():
-        padded = colline_str.zfill(7)
-        imis_code = padded[:4] + padded[5:]
-        loc = Location.objects.filter(code=imis_code, type='V').first()
+        loc = KoboLocationCrosswalk.resolve(colline_str)
         if loc:
             return {'colline_code': loc.code, 'location_id': str(loc.id)}
         loc = Location.objects.filter(code=colline_str, type='V').first()

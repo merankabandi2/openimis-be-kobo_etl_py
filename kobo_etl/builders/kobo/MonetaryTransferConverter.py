@@ -9,4 +9,4 @@ class MonetaryTransferConverter(BaseKoboConverter):
 
     @classmethod
     def to_data_element_obj(cls, koboData, **kwargs):
-        return MonetaryTransfer.to_data_element_obj(koboData)
+        return MonetaryTransfer.to_data_element_obj(koboData, **kwargs)
