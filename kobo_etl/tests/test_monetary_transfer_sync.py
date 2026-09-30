@@ -11,12 +11,13 @@ from django.test import TestCase
 
 from core.test_helpers import create_test_interactive_user
 from location.test_helpers import create_test_location
-from merankabandi.models import MonetaryTransfer, PaymentAgency
+from merankabandi.models import KoboLocationCrosswalk, MonetaryTransfer, PaymentAgency
 from social_protection.models import BenefitPlan
 
 from kobo_etl.schema import RunKoboETLMutation
 from kobo_etl.services import KoboServices
 
+# KoBo colline code and the MIS colline KoboLocationCrosswalk maps it to.
 KOBO_COLLINE = '9906107'
 IMIS_COLLINE = '990607'
 AGENCY = 'Agence KoBo test'
@@ -48,6 +49,8 @@ class MonetaryTransferAmountsSurviveResyncTest(TestCase):
                                                           'parent': province})
         cls.colline = create_test_location('V', custom_props={'code': IMIS_COLLINE, 'name': 'Colline990607',
                                                               'parent': commune})
+        KoboLocationCrosswalk.objects.create(kobo_code=KOBO_COLLINE, location=cls.colline,
+                                             match_method=KoboLocationCrosswalk.MATCH_EXACT)
         cls.agency = PaymentAgency.objects.create(code='KOBOTEST', name=AGENCY)
         cls.plan = BenefitPlan.objects.filter(code='1.2').first()
         if cls.plan is None:
