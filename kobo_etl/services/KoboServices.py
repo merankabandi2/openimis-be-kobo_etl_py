@@ -171,6 +171,15 @@ class KoboSyncError(Exception):
 
 # Columns written in the MIS after import (activity validation): a re-sync never overwrites them.
 LOCALLY_OWNED_FIELDS = ('validation_status', 'validated_by', 'validation_date', 'validation_comment')
+# Per model, further columns only the MIS writes: the monetary-transfer form has no amount field,
+# the amounts are entered on the « Transferts monétaires » screen.
+MODEL_LOCALLY_OWNED_FIELDS = {
+    MonetaryTransfer: ('planned_amount', 'transferred_amount'),
+}
+
+# Scopes run by "all", in this order. monetary_transfer is pulled only on its own: every
+# field of a transfer can be edited in the MIS, and a pull rewrites the fields the form holds.
+ALL_SCOPES = ('grievance', 'training', 'promotion', 'micro_project')
 
 # Scopes whose conversion writes nothing, so a dry run can classify their submissions.
 DRY_RUN_SCOPES = ('training', 'promotion', 'micro_project', 'monetary_transfer')
@@ -191,8 +200,10 @@ class SyncResult:
 
 
 def kobo_owned_fields(model_class) -> List[str]:
-    """Fields a re-sync overwrites: every non-pk field except LOCALLY_OWNED_FIELDS."""
-    return [f for f in _get_model_fields(model_class) if f not in LOCALLY_OWNED_FIELDS]
+    """Fields a re-sync overwrites: every non-pk field except LOCALLY_OWNED_FIELDS
+    and the model's MODEL_LOCALLY_OWNED_FIELDS."""
+    local = (*LOCALLY_OWNED_FIELDS, *MODEL_LOCALLY_OWNED_FIELDS.get(model_class, ()))
+    return [f for f in _get_model_fields(model_class) if f not in local]
 
 
 def _count_existing(model_class, items, chunk_size=1000) -> int:

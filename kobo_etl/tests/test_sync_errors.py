@@ -139,9 +139,9 @@ class RunKoboETLMutationFailureTest(TestCase):
             _mock_user(), scope="all", start_date=None, end_date=None,
         )
 
-        for sync in (sync_grievance, sync_training, sync_bcpromotion,
-                     sync_micro_project, sync_monetary_transfer):
+        for sync in (sync_grievance, sync_training, sync_bcpromotion, sync_micro_project):
             sync.assert_called_once_with(None, None)
+        sync_monetary_transfer.assert_not_called()
         self.assertEqual([e["detail"] for e in result], ["training: KoboFetchError"])
 
     @patch("kobo_etl.services.KoboServices.get")

@@ -65,7 +65,7 @@ class RunKoboETLMutation(OpenIMISMutation):
 
             # Import here to avoid circular imports
             from kobo_etl.services.KoboServices import (
-                sync_grievance, sync_training, sync_bcpromotion,
+                ALL_SCOPES, sync_grievance, sync_training, sync_bcpromotion,
                 sync_micro_project, sync_monetary_transfer
             )
 
@@ -84,7 +84,7 @@ class RunKoboETLMutation(OpenIMISMutation):
                 'monetary_transfer': sync_monetary_transfer,
             }
             if scope == 'all':
-                selected = list(syncs)
+                selected = list(ALL_SCOPES)
             elif scope in syncs:
                 selected = [scope]
             else:
