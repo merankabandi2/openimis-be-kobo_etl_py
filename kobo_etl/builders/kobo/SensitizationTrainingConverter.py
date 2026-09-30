@@ -9,4 +9,4 @@ class SensitizationTrainingConverter(BaseKoboConverter):
 
     @classmethod
     def to_data_element_obj(cls, koboData, **kwargs):
-        return SensitizationTraining.to_data_element_obj(koboData)
+        return SensitizationTraining.to_data_element_obj(koboData, **kwargs)
