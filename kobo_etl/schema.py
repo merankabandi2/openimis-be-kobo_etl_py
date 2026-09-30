@@ -57,13 +57,12 @@ class RunKoboETLMutation(OpenIMISMutation):
             # Execute appropriate sync based on scope
             # sync_* signatures require (start_date, end_date) positionally, see services/KoboServices.py
             if scope == 'all':
-                # Run all syncs
+                # Every scope but monetary_transfer (KoboServices.ALL_SCOPES)
                 sync_results = {
                     'grievance': sync_grievance(start_date, end_date),
                     'training': sync_training(start_date, end_date),
                     'promotion': sync_bcpromotion(start_date, end_date),
                     'micro_project': sync_micro_project(start_date, end_date),
-                    'monetary_transfer': sync_monetary_transfer(start_date, end_date),
                 }
                 logger.info(f"All syncs completed: {sync_results}")
             elif scope == 'grievance':
