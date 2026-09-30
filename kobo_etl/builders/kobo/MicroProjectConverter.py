@@ -9,4 +9,4 @@ class MicroProjectConverter(BaseKoboConverter):
 
     @classmethod
     def to_data_element_obj(cls, koboData, **kwargs):
-        return MicroProject.to_data_element_obj(koboData)
+        return MicroProject.to_data_element_obj(koboData, **kwargs)

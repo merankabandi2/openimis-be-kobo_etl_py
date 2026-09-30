@@ -10,13 +10,13 @@ from django.core.management.base import CommandError
 from django.test import TestCase
 
 from location.test_helpers import create_test_location
-from merankabandi.models import MicroProject, OtherProjectType, SensitizationTraining
+from merankabandi.models import KoboLocationCrosswalk, MicroProject, OtherProjectType, SensitizationTraining
 from kobo_etl.services import KoboServices
 from kobo_etl.strategy import kobo_client
 from kobo_etl.strategy.kobo_client import KoboFetchError
 from kobo_etl.tasks import NIGHTLY_SCOPES, pull_kobo_data
 
-# KoBo colline codes carry a zone digit (5th) that the MIS location code drops.
+# KoBo colline code and the MIS colline KoboLocationCrosswalk maps it to.
 KOBO_COLLINE = '9906107'
 IMIS_COLLINE = '990607'
 UNKNOWN_KOBO_COLLINE = '9807301'
@@ -26,8 +26,11 @@ def _create_colline():
     province = create_test_location('D', custom_props={'code': '99', 'name': 'Province99'})
     commune = create_test_location('W', custom_props={'code': '9906', 'name': 'Commune9906',
                                                       'parent': province})
-    return create_test_location('V', custom_props={'code': IMIS_COLLINE, 'name': 'Colline990607',
-                                                   'parent': commune})
+    colline = create_test_location('V', custom_props={'code': IMIS_COLLINE, 'name': 'Colline990607',
+                                                      'parent': commune})
+    KoboLocationCrosswalk.objects.create(kobo_code=KOBO_COLLINE, location=colline,
+                                         match_method=KoboLocationCrosswalk.MATCH_EXACT)
+    return colline
 
 
 def _micro_project(uid=None, colline=KOBO_COLLINE, others=None, homme='3'):
@@ -128,6 +131,57 @@ class MicroProjectSyncTest(TestCase):
         self.assertIn(
             'micro_project: 3 submissions fetched, 1 would be created, 1 would be updated, 1 skipped', output,
         )
+
+
+class CrosswalkLocationSyncTest(TestCase):
+    """Activities take the MIS colline KoboLocationCrosswalk gives for their KoBo colline code."""
+
+    def setUp(self):
+        self.colline = _create_colline()
+        province = create_test_location('D', custom_props={'code': '98', 'name': 'Province98'})
+        commune = create_test_location('W', custom_props={'code': '9807', 'name': 'Commune9807',
+                                                          'parent': province})
+        # 9807301 with its zone digit cut out.
+        self.digit_colline = create_test_location('V', custom_props={'code': '980701', 'name': 'Colline980701',
+                                                                     'parent': commune})
+
+    @patch('kobo_etl.services.KoboServices.get')
+    def test_code_without_crosswalk_row_is_skipped_even_when_its_digits_name_a_colline(self, kobo_get):
+        kobo_get.return_value = _kobo([_micro_project(colline=UNKNOWN_KOBO_COLLINE)])
+
+        with self.assertLogs('kobo_etl.services.KoboServices', level='WARNING'):
+            output = _pull('micro_project')
+
+        self.assertEqual(MicroProject.objects.count(), 0)
+        self.assertIn('0 created, 0 updated, 1 skipped', output)
+
+    @patch('kobo_etl.services.KoboServices.get')
+    def test_skipped_codes_are_logged_by_kobo_commune(self, kobo_get):
+        kobo_get.return_value = _kobo([
+            {**_training(), 'group_ln06g44/Colline': UNKNOWN_KOBO_COLLINE, 'group_ln06g44/Commune': '9807'},
+            {**_training(), 'group_ln06g44/Colline': UNKNOWN_KOBO_COLLINE, 'group_ln06g44/Commune': '9807'},
+            _training(),
+        ])
+
+        with self.assertLogs('kobo_etl.services.KoboServices', level='WARNING') as logs:
+            _pull('training')
+
+        self.assertIn('training: 2 of 3 KoBo submissions skipped', '\n'.join(logs.output))
+        self.assertIn(f'commune 9807: {UNKNOWN_KOBO_COLLINE}', '\n'.join(logs.output))
+
+    @patch('kobo_etl.services.KoboServices.get')
+    def test_resync_moves_an_activity_to_its_crosswalk_colline(self, kobo_get):
+        data = _training()
+        SensitizationTraining.objects.create(
+            id=data['_uuid'], sensitization_date='2026-08-18', location=self.digit_colline,
+            validation_status='VALIDATED', validation_comment='ok')
+        kobo_get.return_value = _kobo([data])
+
+        _pull('training')
+
+        training = SensitizationTraining.objects.get(id=data['_uuid'])
+        self.assertEqual(training.location, self.colline)
+        self.assertEqual((training.validation_status, training.validation_comment), ('VALIDATED', 'ok'))
 
 
 class ValidationSurvivesResyncTest(TestCase):
