@@ -1,7 +1,9 @@
 # Service to pull openIMIS grievance from Kobo
 import logging
 
-from merankabandi.models import MicroProject, MonetaryTransfer, SensitizationTraining, BehaviorChangePromotion
+from merankabandi.models import (
+    BehaviorChangePromotion, KoboLocationCrosswalk, MicroProject, MonetaryTransfer, SensitizationTraining,
+)
 from grievance_social_protection.models import Ticket
 
 from kobo_etl.builders.kobo.SensitizationTrainingConverter import SensitizationTrainingConverter
@@ -181,18 +183,41 @@ def _count_existing(model_class, items, chunk_size=1000) -> int:
     )
 
 
+ACTIVITY_COLLINE_FIELD = 'group_ln06g44/Colline'
+ACTIVITY_COMMUNE_FIELD = 'group_ln06g44/Commune'
+
+
+def _unmatched_collines_by_commune(submissions, items) -> Dict[str, List[str]]:
+    """{KoBo commune code: KoBo colline codes} of the submissions the converter dropped."""
+    kept = {str(item.id) for item in items}
+    by_commune = {}
+    for submission in submissions:
+        if str(submission.get('_uuid')) in kept:
+            continue
+        commune = str(submission.get(ACTIVITY_COMMUNE_FIELD) or '?')
+        colline = KoboLocationCrosswalk.kobo_code_of(submission.get(ACTIVITY_COLLINE_FIELD)) or '(none)'
+        codes = by_commune.setdefault(commune, [])
+        if colline not in codes:
+            codes.append(colline)
+    return by_commune
+
+
 def _sync_activity(scope, form_uid, converter, model_class, dry_run=False, after_upsert=None) -> SyncResult:
     """Fetch one activity form and upsert its submissions by KoBo _uuid.
 
-    Submissions the converter drops (colline code without a MIS location) are counted as skipped.
+    Submissions the converter drops (colline code without a location in
+    KoboLocationCrosswalk) are counted as skipped.
     after_upsert(items), when given, runs in one transaction with the upsert.
     """
     submissions = get(form_uid).get('results', [])
-    items = converter.to_data_set_obj(submissions)
+    items = converter.to_data_set_obj(submissions, location_map=KoboLocationCrosswalk.location_map())
     result = SyncResult(fetched=len(submissions), skipped=len(submissions) - len(items), dry_run=dry_run)
     if result.skipped:
+        unmatched = _unmatched_collines_by_commune(submissions, items)
+        detail = '; '.join(f"commune {commune}: {', '.join(sorted(codes))}"
+                           for commune, codes in sorted(unmatched.items()))
         logger.warning(f"{scope}: {result.skipped} of {result.fetched} KoBo submissions skipped "
-                       f"(no MIS location for their colline code)")
+                       f"(no crosswalk location for their KoBo colline code) - {detail}")
     if dry_run:
         result.updated = _count_existing(model_class, items)
         result.created = len(items) - result.updated
