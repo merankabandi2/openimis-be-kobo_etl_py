@@ -263,8 +263,16 @@ def sync_grievance(startDate, stopDate, dry_run=False):
         koboFormData = get("aeAgbxjy7d6rD8jtUdMD9Z").get('results', [])
         if koboFormData:
             items = GrievanceConverter.to_data_set_obj(koboFormData)
+            item_ids = [i.id for i in items if i.id]
+            existing_ids = {str(pk) for pk in
+                            Ticket.objects.filter(id__in=item_ids).values_list('id', flat=True)}
             bulk_upsert(model_class=Ticket, data_list=items, update_fields=[])
             logger.info(f"Synced {len(items)} grievances from old form (v1)")
+            # v1 tickets get no workflow, except the VBG/EAS/HS procedure.
+            from merankabandi.grievance_vbg import start_vbg_workflows
+            started = start_vbg_workflows([i for i in item_ids if str(i) not in existing_ids])
+            if started:
+                logger.info(f"Synced v1: VBG/EAS/HS workflow started on {started} tickets")
     except Exception as e:
         logger.warning(f"Failed to sync old grievance form: {e}")
 
