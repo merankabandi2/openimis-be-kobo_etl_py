@@ -303,12 +303,20 @@ def sync_grievance(startDate, stopDate, dry_run=False):
             items = GrievanceConverter.to_data_set_obj(koboFormData)
             # With no update field, bulk_upsert's updated count is always 0: the
             # submissions skipped are those whose ticket already exists.
-            existing = Ticket.objects.filter(id__in=[i.id for i in items if i.id]).count()
+            item_ids = [i.id for i in items if i.id]
+            existing_ids = {str(pk) for pk in
+                            Ticket.objects.filter(id__in=item_ids).values_list('id', flat=True)}
+            existing = len(existing_ids)
             created, _ = bulk_upsert(model_class=Ticket, data_list=items, update_fields=[])
             result.created += created
             result.skipped += existing
             logger.info(f"Synced v1: {created} created, {existing} skipped (existing), "
                         f"{len(koboFormData)} submissions")
+            # v1 tickets get no workflow, except the VBG/EAS/HS procedure.
+            from merankabandi.grievance_vbg import start_vbg_workflows
+            started = start_vbg_workflows([i for i in item_ids if str(i) not in existing_ids])
+            if started:
+                logger.info(f"Synced v1: VBG/EAS/HS workflow started on {started} tickets")
     except Exception as e:
         logger.error(f"Failed to sync old grievance form: {e}", exc_info=True)
         failures.append(f"v1: {e}")

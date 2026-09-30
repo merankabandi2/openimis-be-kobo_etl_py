@@ -173,7 +173,7 @@ class GrievanceConverter(BaseKoboConverter):
         if additional_categories:
             json_ext['additional_categories'] = additional_categories
 
-        return Ticket(
+        ticket = Ticket(
             id=grievanceKoboData.get('_uuid'),
             title=grievanceKoboData.get('id_plainte'),
             description=grievanceKoboData.get('description_plainte'),
@@ -188,6 +188,11 @@ class GrievanceConverter(BaseKoboConverter):
             user_created=user,
             user_updated=user,
         )
+        # bulk_upsert inserts without pre_save: a VBG/EAS/HS ticket keeps no
+        # identity (the v1 form asks no consent to store it).
+        from merankabandi.grievance_vbg import minimize_ticket
+        minimize_ticket(ticket, is_new=True)
+        return ticket
 
     @classmethod
     def to_data_set_obj(cls, grievancesKoboData, **kwargs):
