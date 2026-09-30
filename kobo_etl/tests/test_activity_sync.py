@@ -181,7 +181,7 @@ class PullKoboDataCommandTest(TestCase):
                 _pull('all', '--dry-run')
         kobo_get.assert_not_called()
 
-    def test_all_runs_every_scope_then_fails(self):
+    def test_all_runs_every_scope_but_monetary_transfer_then_fails(self):
         syncs = {scope: Mock(return_value=KoboServices.SyncResult()) for scope in KoboServices.SCOPE_SYNCS}
         syncs['training'].side_effect = KoboFetchError('KoBo down')
 
@@ -189,8 +189,9 @@ class PullKoboDataCommandTest(TestCase):
             with self.assertRaises(CommandError) as ctx:
                 _pull('all')
 
-        for sync in syncs.values():
-            sync.assert_called_once_with(None, None, dry_run=False)
+        for scope in KoboServices.ALL_SCOPES:
+            syncs[scope].assert_called_once_with(None, None, dry_run=False)
+        syncs['monetary_transfer'].assert_not_called()
         self.assertEqual(str(ctx.exception), 'KoBo sync failed for: training')
 
 
