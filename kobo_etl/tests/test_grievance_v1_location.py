@@ -17,7 +17,7 @@ class GrievanceV1CollineResolutionTest(TestCase):
         bukeye = create_test_location('W', custom_props={'code': '1101', 'name': 'Bukeye', 'parent': muramvya})
         self.bigina = create_test_location('V', custom_props={'code': '100101', 'name': 'Bigina',
                                                               'parent': kayogoro})
-        # 1101101 without its zone digit.
+        # 1101101 with its zone digit cut out.
         self.buhorwa = create_test_location('V', custom_props={'code': '110101', 'name': 'Buhorwa',
                                                                'parent': bukeye})
 

@@ -141,7 +141,7 @@ class CrosswalkLocationSyncTest(TestCase):
         province = create_test_location('D', custom_props={'code': '98', 'name': 'Province98'})
         commune = create_test_location('W', custom_props={'code': '9807', 'name': 'Commune9807',
                                                           'parent': province})
-        # 9807301 without its zone digit: the colline the former conversion picked.
+        # 9807301 with its zone digit cut out.
         self.digit_colline = create_test_location('V', custom_props={'code': '980701', 'name': 'Colline980701',
                                                                      'parent': commune})
 
