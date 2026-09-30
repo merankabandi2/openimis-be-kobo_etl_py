@@ -12,6 +12,7 @@ from kobo_etl.builders.kobo.MonetaryTransferConverter import MonetaryTransferCon
 from kobo_etl.builders.kobo.MicroProjectConverter import MicroProjectConverter
 from kobo_etl.builders.kobo.GrievanceConverter import GrievanceConverter
 from kobo_etl.strategy.kobo_client import *
+from collections import Counter
 from contextlib import nullcontext
 from dataclasses import dataclass
 
@@ -233,6 +234,23 @@ def _unmatched_collines_by_commune(submissions, items) -> Dict[str, List[str]]:
     return by_commune
 
 
+def _log_form_versions(scope, items):
+    """Log, per KoBo form version, how many submissions were read and from which participant fields.
+
+    Uses the unsaved kobo_form_version / kobo_participant_source attributes the
+    converters set; submissions matching no known participant field are a WARNING.
+    """
+    sources = Counter((getattr(item, 'kobo_form_version', None), getattr(item, 'kobo_participant_source', None))
+                      for item in items if hasattr(item, 'kobo_participant_source'))
+    for (version, source), count in sorted(sources.items(), key=lambda row: (str(row[0][0]), str(row[0][1]))):
+        if source:
+            logger.info(f"{scope}: form version {version}: {count} submissions, participants from {source}")
+    unknown = {version: count for (version, source), count in sources.items() if not source}
+    if unknown:
+        logger.warning(f"{scope}: {sum(unknown.values())} submissions without any known participant field, "
+                       f"stored with 0 participants (form versions: {', '.join(sorted(map(str, unknown)))})")
+
+
 def _sync_activity(scope, form_uid, converter, model_class, start_date, end_date,
                    dry_run=False, after_upsert=None) -> SyncResult:
     """Fetch one activity form and upsert its submissions by KoBo _uuid.
@@ -244,6 +262,7 @@ def _sync_activity(scope, form_uid, converter, model_class, start_date, end_date
     submissions = get(form_uid, start_date=start_date, end_date=end_date).get('results', [])
     items = converter.to_data_set_obj(submissions, location_map=KoboLocationCrosswalk.location_map())
     result = SyncResult(fetched=len(submissions), skipped=len(submissions) - len(items), dry_run=dry_run)
+    _log_form_versions(scope, items)
     if result.skipped:
         unmatched = _unmatched_collines_by_commune(submissions, items)
         detail = '; '.join(f"commune {commune}: {', '.join(sorted(codes))}"
