@@ -16,7 +16,6 @@ class KoboETLScopeEnum(graphene.Enum):
     TRAINING = "training"
     PROMOTION = "promotion"
     MICRO_PROJECT = "micro_project"
-    MONETARY_TRANSFER = "monetary_transfer"
 
 
 class RunKoboETLMutation(OpenIMISMutation):
@@ -44,8 +43,7 @@ class RunKoboETLMutation(OpenIMISMutation):
 
             # Import here to avoid circular imports
             from kobo_etl.services.KoboServices import (
-                sync_grievance, sync_training, sync_bcpromotion,
-                sync_micro_project, sync_monetary_transfer
+                sync_grievance, sync_training, sync_bcpromotion, sync_micro_project,
             )
 
             scope = data.get('scope')
@@ -57,7 +55,7 @@ class RunKoboETLMutation(OpenIMISMutation):
             # Execute appropriate sync based on scope
             # sync_* signatures require (start_date, end_date) positionally, see services/KoboServices.py
             if scope == 'all':
-                # Every scope but monetary_transfer (KoboServices.ALL_SCOPES)
+                # KoboServices.ALL_SCOPES
                 sync_results = {
                     'grievance': sync_grievance(start_date, end_date),
                     'training': sync_training(start_date, end_date),
@@ -73,8 +71,6 @@ class RunKoboETLMutation(OpenIMISMutation):
                 sync_results = {'promotion': sync_bcpromotion(start_date, end_date)}
             elif scope == 'micro_project':
                 sync_results = {'micro_project': sync_micro_project(start_date, end_date)}
-            elif scope == 'monetary_transfer':
-                sync_results = {'monetary_transfer': sync_monetary_transfer(start_date, end_date)}
             else:
                 raise ValidationError(f"Invalid scope: {scope}")
 
