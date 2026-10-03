@@ -283,6 +283,26 @@ def _sync_activity(scope, form_uid, converter, model_class, start_date, end_date
     return result
 
 
+def start_new_ticket_workflows(ticket_ids):
+    """Start the workflow of each ticket of ticket_ids that is still to be
+    handled (neither RESOLVED nor CLOSED) and has none, as the v2 import does
+    (GrievanceConverterV2.post_import); the category decides the template
+    (WorkflowService.match_template). Returns the number of tickets given a
+    workflow."""
+    from merankabandi.workflow_service import WorkflowService
+
+    started = 0
+    tickets = (Ticket.objects.filter(id__in=list(ticket_ids), workflows__isnull=True)
+               .exclude(status__in=[Ticket.TicketStatus.RESOLVED, Ticket.TicketStatus.CLOSED]))
+    for ticket in tickets:
+        try:
+            if WorkflowService.auto_create_workflow(ticket):
+                started += 1
+        except Exception as e:
+            logger.error(f"Failed to start the workflow of v1 ticket {ticket.id}: {e}", exc_info=True)
+    return started
+
+
 def sync_grievance(startDate, stopDate, dry_run=False):
     """Import both KoBo grievance forms; each form is attempted even if the other fails.
 
@@ -312,11 +332,9 @@ def sync_grievance(startDate, stopDate, dry_run=False):
             result.skipped += existing
             logger.info(f"Synced v1: {created} created, {existing} skipped (existing), "
                         f"{len(koboFormData)} submissions")
-            # v1 tickets get no workflow, except the VBG/EAS/HS procedure.
-            from merankabandi.grievance_vbg import start_vbg_workflows
-            started = start_vbg_workflows([i for i in item_ids if str(i) not in existing_ids])
+            started = start_new_ticket_workflows([i for i in item_ids if str(i) not in existing_ids])
             if started:
-                logger.info(f"Synced v1: VBG/EAS/HS workflow started on {started} tickets")
+                logger.info(f"Synced v1: workflow started on {started} tickets")
     except Exception as e:
         logger.error(f"Failed to sync old grievance form: {e}", exc_info=True)
         failures.append(f"v1: {e}")
