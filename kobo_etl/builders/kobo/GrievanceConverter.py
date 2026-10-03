@@ -85,6 +85,7 @@ def _resolve_colline(colline_value, zone_value=None):
     matches = _valid_collines(name__iexact=colline_str, parent_id__in=communes)
     return _located(matches[0]) if len(matches) == 1 else {}
 
+
 logger = logging.getLogger('openIMIS')
 
 
