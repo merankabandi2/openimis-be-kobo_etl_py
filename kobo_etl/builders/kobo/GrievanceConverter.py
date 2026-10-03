@@ -1,6 +1,8 @@
 import logging
 import json
 import os
+import re
+import unicodedata
 from datetime import datetime
 
 from core.models import User
@@ -11,31 +13,77 @@ from merankabandi.models import KoboLocationCrosswalk
 from . import BaseKoboConverter
 
 
-def _resolve_colline(colline_value):
-    """Resolve a colline value (name or code) to colline_code + location_id.
+def _normalise(name):
+    """Letters of a colline name, lower case, without accents."""
+    text = unicodedata.normalize('NFKD', str(name or '')).encode('ascii', 'ignore').decode()
+    return re.sub(r'[^a-z]', '', text.lower())
 
-    A number is a KoBo colline code, resolved through KoboLocationCrosswalk,
-    or else a MIS colline code.
+
+def _valid_collines(**lookup):
+    return list(Location.objects.filter(type='V', validity_to__isnull=True, **lookup)[:2])
+
+
+def _crosswalk_code_in_zone(zone, label):
+    """KoBo colline code of the crosswalk row of KoBo zone `zone` whose label is
+    `label`, '' unless there is exactly one."""
+    rows = KoboLocationCrosswalk.objects.filter(kobo_code__startswith=zone).values_list(
+        'kobo_code', 'kobo_colline_label')
+    codes = [code for code, row_label in rows
+             if len(code) == len(zone) + 2 and _normalise(row_label) == label]
+    return codes[0] if len(codes) == 1 else ''
+
+
+def _zone_communes(zone):
+    """Ids of the live MIS communes of the live collines the crosswalk gives for
+    the KoBo commune of KoBo zone `zone` (the zone code without its last digit)."""
+    commune = zone[:-1]
+    rows = KoboLocationCrosswalk.objects.filter(
+        kobo_code__startswith=commune, location__validity_to__isnull=True,
+        location__parent__validity_to__isnull=True,
+    ).values_list('kobo_code', 'location__parent_id')
+    return {parent_id for code, parent_id in rows
+            if parent_id is not None and len(code) == len(commune) + 3}
+
+
+def _located(location):
+    return {'colline_code': location.code, 'location_id': str(location.id)}
+
+
+def _resolve_colline(colline_value, zone_value=None):
+    """colline_code + location_id of the colline of a v1 submission, {} when it
+    cannot be told apart.
+
+    A number is a KoBo colline code, resolved through KoboLocationCrosswalk, or
+    else the code of one valid MIS colline. A name is resolved within the KoBo
+    zone code `zone_value` (KoBo commune code + zone digit): the crosswalk row of
+    that zone carrying the name, else the one valid MIS colline of that name in
+    the communes the crosswalk gives for the zone's KoBo commune. Without a zone,
+    a name is not resolved.
     """
     if not colline_value:
         return {}
-
     colline_str = str(colline_value).strip()
 
     if colline_str.isdigit():
         loc = KoboLocationCrosswalk.resolve(colline_str)
         if loc:
-            return {'colline_code': loc.code, 'location_id': str(loc.id)}
-        loc = Location.objects.filter(code=colline_str, type='V').first()
-        if loc:
-            return {'colline_code': loc.code, 'location_id': str(loc.id)}
+            return _located(loc)
+        matches = _valid_collines(code=colline_str)
+        return _located(matches[0]) if len(matches) == 1 else {}
 
-    # Try name match
-    loc = Location.objects.filter(name__iexact=colline_str, type='V').first()
+    zone = str(zone_value or '').strip()
+    label = _normalise(colline_str)
+    if not zone.isdigit() or not label:
+        return {}
+    code = _crosswalk_code_in_zone(zone, label)
+    loc = KoboLocationCrosswalk.resolve(code) if code else None
     if loc:
-        return {'colline_code': loc.code, 'location_id': str(loc.id)}
-
-    return {}
+        return _located(loc)
+    communes = _zone_communes(zone)
+    if not communes:
+        return {}
+    matches = _valid_collines(name__iexact=colline_str, parent_id__in=communes)
+    return _located(matches[0]) if len(matches) == 1 else {}
 
 logger = logging.getLogger('openIMIS')
 
@@ -98,8 +146,10 @@ class GrievanceConverter(BaseKoboConverter):
         if grievanceKoboData.get('group_categorie/categories_non_sensibles') == 'compte':
             account_type = grievanceKoboData.get('groupe_compte/categorie_compte')
 
-        # Resolve location from colline value
-        resolved_loc = _resolve_colline(grievanceKoboData.get('group_im0ri26/colline'))
+        # Resolve location from the colline value within the submission's zone
+        colline_value = grievanceKoboData.get('group_im0ri26/colline')
+        zone_value = grievanceKoboData.get('group_im0ri26/zone')
+        resolved_loc = _resolve_colline(colline_value, zone_value)
 
         # Build json_ext with all custom data (columns were dropped from Ticket model)
         json_ext = {
@@ -122,6 +172,9 @@ class GrievanceConverter(BaseKoboConverter):
                 "colline_code": resolved_loc.get('colline_code', ''),
                 "location_id": resolved_loc.get('location_id'),
                 "gps": grievanceKoboData.get('group_im0ri26/Localisation'),
+                # Form values, kept so an unresolved ticket can be located later.
+                "colline": str(colline_value).strip() if colline_value else '',
+                "kobo_zone": str(zone_value).strip() if zone_value else '',
             },
             "categorization": {
                 "is_project_related": grievanceKoboData.get('projet_plainte'),
