@@ -102,9 +102,28 @@ class GrievanceV1LocationJsonTest(TestCase):
         ticket = self._ticket(**{'group_im0ri26/zone': '9013', 'group_im0ri26/colline': 'rabiro'})
         self.assertEqual(ticket.json_ext['location'], {
             'colline_code': 'VL1', 'location_id': str(self.colline.id), 'gps': None,
-            'colline': 'rabiro', 'kobo_zone': '9013'})
+            'kobo_colline_label': 'rabiro', 'kobo_zone': '9013'})
 
     def test_unresolved_location_keeps_the_form_values(self):
         ticket = self._ticket(**{'group_im0ri26/colline': 'Rabiro'})
         self.assertEqual(ticket.json_ext['location'], {
-            'colline_code': '', 'location_id': None, 'gps': None, 'colline': 'Rabiro', 'kobo_zone': ''})
+            'colline_code': '', 'location_id': None, 'gps': None, 'kobo_colline_label': 'Rabiro', 'kobo_zone': ''})
+
+    def test_backfill_does_not_place_an_unresolved_ticket_by_name_across_the_country(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+        from grievance_social_protection.models import Ticket
+
+        # « Rubira » is the name of one colline, in a commune the zone does not give.
+        province = create_test_location('D', custom_props={'code': 'PL2', 'name': 'P2'})
+        commune = create_test_location('W', custom_props={'code': 'CL2', 'name': 'C2', 'parent': province})
+        create_test_location('V', custom_props={'code': 'VL2', 'name': 'Rubira', 'parent': commune})
+        ticket = self._ticket(**{'group_im0ri26/zone': '9013', 'group_im0ri26/colline': 'Rubira'})
+        ticket.save(username=self.user.username)
+
+        call_command('backfill_ticket_locations', stdout=StringIO())
+
+        location = Ticket.objects.get(id=ticket.id).json_ext['location']
+        self.assertEqual(location['colline_code'], '')
+        self.assertIsNone(location['location_id'])

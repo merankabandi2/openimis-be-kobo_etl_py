@@ -173,8 +173,9 @@ class GrievanceConverter(BaseKoboConverter):
                 "colline_code": resolved_loc.get('colline_code', ''),
                 "location_id": resolved_loc.get('location_id'),
                 "gps": grievanceKoboData.get('group_im0ri26/Localisation'),
-                # Form values, kept so an unresolved ticket can be located later.
-                "colline": str(colline_value).strip() if colline_value else '',
+                # Form values, kept so an unresolved ticket can be located by
+                # hand later; backfill_ticket_locations does not read these keys.
+                "kobo_colline_label": str(colline_value).strip() if colline_value else '',
                 "kobo_zone": str(zone_value).strip() if zone_value else '',
             },
             "categorization": {
