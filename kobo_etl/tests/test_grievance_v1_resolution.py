@@ -190,3 +190,56 @@ class GrievanceV1VbgTest(TestCase):
         self.assertFalse(tickets[resolved_vbg['_uuid']].workflows.exists())
         self.assertFalse(tickets[other['_uuid']].workflows.exists())
         self.assertNotIn('name', tickets[open_vbg['_uuid']].json_ext['reporter'])
+
+
+class GrievanceV1WorkflowTest(TestCase):
+    """New open v1 tickets of every category get their workflow, as v2 tickets
+    do (mis#324); tickets imported before get none from a later sync."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.user = create_test_interactive_user(username="kobo_v1_workflow")
+        create_test_interactive_user(username="Admin")
+        call_command('seed_workflow_templates', stdout=StringIO())
+
+    def setUp(self):
+        patcher = mock.patch.dict('os.environ', {'KOBO_IMPORT_USERNAME': self.user.username})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _sync(self, kobo_get, submissions):
+        kobo_get.side_effect = lambda uid, **kwargs: {
+            "count": len(submissions), "results": submissions} if uid == V1_FORM \
+            else {"count": 0, "results": []}
+        KoboServices.sync_grievance(None, None)
+
+    def _templates(self, submission):
+        return list(Ticket.objects.get(id=submission['_uuid']).workflows.values_list('template__name', flat=True))
+
+    @mock.patch("kobo_etl.services.KoboServices.get")
+    def test_new_open_payment_ticket_gets_its_workflow(self, kobo_get):
+        payment = _v1_submission(**{'group_categorie/categories_non_sensibles': 'paiement_pas_recu'})
+        resolved = _v1_submission(**{'group_categorie/categories_non_sensibles': 'paiement_pas_recu',
+                                     'plainte_resolue': 'oui'})
+        self._sync(kobo_get, [payment, resolved])
+
+        self.assertEqual(self._templates(payment), ['payment_non_reception'])
+        self.assertEqual(self._templates(resolved), [])
+
+    @mock.patch("kobo_etl.services.KoboServices.get")
+    def test_ticket_imported_before_gets_no_workflow_from_a_later_sync(self, kobo_get):
+        payment = _v1_submission(**{'group_categorie/categories_non_sensibles': 'paiement_pas_recu'})
+        ticket = GrievanceConverter.to_data_element_obj(payment)
+        KoboServices.bulk_upsert(model_class=Ticket, data_list=[ticket], update_fields=[])
+
+        self._sync(kobo_get, [payment])
+
+        self.assertEqual(self._templates(payment), [])
+
+    @mock.patch("kobo_etl.services.KoboServices.get")
+    def test_uncategorized_ticket_gets_no_workflow(self, kobo_get):
+        uncategorized = _v1_submission()
+        self._sync(kobo_get, [uncategorized])
+
+        self.assertEqual(Ticket.objects.get(id=uncategorized['_uuid']).category, 'uncategorized')
+        self.assertEqual(self._templates(uncategorized), [])
