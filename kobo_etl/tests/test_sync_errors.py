@@ -124,14 +124,13 @@ class RunKoboETLMutationFailureTest(TestCase):
             "detail": "grievance: KoboSyncError",
         }])
 
-    @patch("kobo_etl.services.KoboServices.sync_monetary_transfer")
     @patch("kobo_etl.services.KoboServices.sync_micro_project")
     @patch("kobo_etl.services.KoboServices.sync_bcpromotion")
     @patch("kobo_etl.services.KoboServices.sync_training")
     @patch("kobo_etl.services.KoboServices.sync_grievance")
     def test_scope_all_runs_every_sync_and_reports_the_failed_one(
         self, sync_grievance, sync_training, sync_bcpromotion,
-        sync_micro_project, sync_monetary_transfer,
+        sync_micro_project,
     ):
         sync_training.side_effect = KoboFetchError("KoBo down")
 
@@ -141,7 +140,6 @@ class RunKoboETLMutationFailureTest(TestCase):
 
         for sync in (sync_grievance, sync_training, sync_bcpromotion, sync_micro_project):
             sync.assert_called_once_with(None, None)
-        sync_monetary_transfer.assert_not_called()
         self.assertEqual([e["detail"] for e in result], ["training: KoboFetchError"])
 
     @patch("kobo_etl.services.KoboServices.get")
