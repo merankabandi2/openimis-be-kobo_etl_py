@@ -37,7 +37,6 @@ class KoboETLScopeEnum(graphene.Enum):
     TRAINING = "training"
     PROMOTION = "promotion"
     MICRO_PROJECT = "micro_project"
-    MONETARY_TRANSFER = "monetary_transfer"
 
 
 class RunKoboETLMutation(OpenIMISMutation):
@@ -65,8 +64,7 @@ class RunKoboETLMutation(OpenIMISMutation):
 
             # Import here to avoid circular imports
             from kobo_etl.services.KoboServices import (
-                ALL_SCOPES, sync_grievance, sync_training, sync_bcpromotion,
-                sync_micro_project, sync_monetary_transfer
+                ALL_SCOPES, sync_grievance, sync_training, sync_bcpromotion, sync_micro_project,
             )
 
             scope = data.get('scope')
@@ -81,7 +79,6 @@ class RunKoboETLMutation(OpenIMISMutation):
                 'training': sync_training,
                 'promotion': sync_bcpromotion,
                 'micro_project': sync_micro_project,
-                'monetary_transfer': sync_monetary_transfer,
             }
             if scope == 'all':
                 selected = list(ALL_SCOPES)

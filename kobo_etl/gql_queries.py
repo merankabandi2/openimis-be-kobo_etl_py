@@ -36,7 +36,7 @@ class KoboETLStatusType(graphene.ObjectType):
         return bool(getattr(settings, 'TOKEN_KOBO', None))
     
     def resolve_available_scopes(self, info):
-        return ['all', 'grievance', 'training', 'promotion', 'micro_project', 'monetary_transfer']
+        return ['all', 'grievance', 'training', 'promotion', 'micro_project']
     
     def resolve_last_sync_date(self, info):
         # Get the last successful ETL mutation

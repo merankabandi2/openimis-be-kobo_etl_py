@@ -2,13 +2,12 @@
 import logging
 
 from merankabandi.models import (
-    BehaviorChangePromotion, KoboLocationCrosswalk, MicroProject, MonetaryTransfer, SensitizationTraining,
+    BehaviorChangePromotion, KoboLocationCrosswalk, MicroProject, SensitizationTraining,
 )
 from grievance_social_protection.models import Ticket
 
 from kobo_etl.builders.kobo.SensitizationTrainingConverter import SensitizationTrainingConverter
 from kobo_etl.builders.kobo.BehaviorChangePromotionConverter import BehaviorChangePromotionConverter
-from kobo_etl.builders.kobo.MonetaryTransferConverter import MonetaryTransferConverter
 from kobo_etl.builders.kobo.MicroProjectConverter import MicroProjectConverter
 from kobo_etl.builders.kobo.GrievanceConverter import GrievanceConverter
 from kobo_etl.strategy.kobo_client import *
@@ -27,7 +26,6 @@ GRIEVANCE_V2_FORM = "atpoVbHXZCdLD9ETHTv6z4"
 TRAINING_FORM = "a77BL33LXCfAVovg4seMbH"
 PROMOTION_FORM = "aMzfPosq2VNg3fHdpBJ3jU"
 MICRO_PROJECT_FORM = "aGMbKXkL2XUhtUAmEf95es"
-MONETARY_TRANSFER_FORM = "ayK8Y5yP3MPTYQ3cPcpj9N"
 
 # KoBo forms read by each runKoboEtl scope.
 SCOPE_FORMS = {
@@ -35,7 +33,6 @@ SCOPE_FORMS = {
     'training': (TRAINING_FORM,),
     'promotion': (PROMOTION_FORM,),
     'micro_project': (MICRO_PROJECT_FORM,),
-    'monetary_transfer': (MONETARY_TRANSFER_FORM,),
 }
 
 def bulk_upsert(model_class, data_list: List[Dict[Any, Any]], 
@@ -172,18 +169,12 @@ class KoboSyncError(Exception):
 
 # Columns written in the MIS after import (activity validation): a re-sync never overwrites them.
 LOCALLY_OWNED_FIELDS = ('validation_status', 'validated_by', 'validation_date', 'validation_comment')
-# Per model, further columns only the MIS writes: the monetary-transfer form has no amount field,
-# the amounts are entered on the « Transferts monétaires » screen.
-MODEL_LOCALLY_OWNED_FIELDS = {
-    MonetaryTransfer: ('planned_amount', 'transferred_amount'),
-}
-
-# Scopes run by "all", in this order. monetary_transfer is pulled only on its own: every
-# field of a transfer can be edited in the MIS, and a pull rewrites the fields the form holds.
+# Scopes run by "all", in this order. Monetary transfers have no KoBo scope: they are
+# entered only on the MIS « Transferts Monétaires » screen.
 ALL_SCOPES = ('grievance', 'training', 'promotion', 'micro_project')
 
 # Scopes whose conversion writes nothing, so a dry run can classify their submissions.
-DRY_RUN_SCOPES = ('training', 'promotion', 'micro_project', 'monetary_transfer')
+DRY_RUN_SCOPES = ('training', 'promotion', 'micro_project')
 
 
 @dataclass
@@ -201,10 +192,8 @@ class SyncResult:
 
 
 def kobo_owned_fields(model_class) -> List[str]:
-    """Fields a re-sync overwrites: every non-pk field except LOCALLY_OWNED_FIELDS
-    and the model's MODEL_LOCALLY_OWNED_FIELDS."""
-    local = (*LOCALLY_OWNED_FIELDS, *MODEL_LOCALLY_OWNED_FIELDS.get(model_class, ()))
-    return [f for f in _get_model_fields(model_class) if f not in local]
+    """Fields a re-sync overwrites: every non-pk field except LOCALLY_OWNED_FIELDS."""
+    return [f for f in _get_model_fields(model_class) if f not in LOCALLY_OWNED_FIELDS]
 
 
 def _count_existing(model_class, items, chunk_size=1000) -> int:
@@ -371,17 +360,12 @@ def sync_micro_project(startDate, stopDate, dry_run=False):
                           MicroProject, startDate, stopDate, dry_run,
                           after_upsert=MicroProject.replace_other_project_types)
 
-def sync_monetary_transfer(startDate, stopDate, dry_run=False):
-    return _sync_activity('monetary_transfer', MONETARY_TRANSFER_FORM, MonetaryTransferConverter,
-                          MonetaryTransfer, startDate, stopDate, dry_run)
-
 
 SCOPE_SYNCS = {
     'grievance': sync_grievance,
     'training': sync_training,
     'promotion': sync_bcpromotion,
     'micro_project': sync_micro_project,
-    'monetary_transfer': sync_monetary_transfer,
 }
 
 
@@ -398,21 +382,3 @@ def run_syncs(scopes, start_date=None, end_date=None, dry_run=False):
             logger.error(f"KoBo sync '{scope}' failed: {exc}", exc_info=True)
             failures[scope] = exc
     return results, failures
-
-def sync_rsu_partial(startDate, stopDate):
-    koboFormData = get("a6rTFPVMsQKfYZKmH7RRDL").get('results')
-    items = MonetaryTransferConverter.to_data_set_obj(koboFormData)
-    bulk_upsert(
-        model_class=MonetaryTransfer,
-        data_list=items
-    )
-    return
-
-def sync_rsu_all(startDate, stopDate):
-    koboFormData = get("acPfASinsGorm6ojyhfJff").get('results')
-    items = MonetaryTransferConverter.to_data_set_obj(koboFormData)
-    bulk_upsert(
-        model_class=MonetaryTransfer,
-        data_list=items
-    )
-    return
