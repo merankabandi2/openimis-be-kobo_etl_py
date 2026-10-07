@@ -1,7 +1,6 @@
 from unittest.mock import patch
 
 from django.test import TestCase
-from django.utils.translation import gettext
 from graphene import Schema
 from graphene.test import Client
 
@@ -10,6 +9,7 @@ from core.models.openimis_graphql_test_case import BaseTestContext
 from core.test_helpers import create_test_interactive_user, create_test_role
 from core.utils import collect_all_gql_permissions
 from kobo_etl.apps import KoboConfig
+from kobo_etl.gql_queries import KOBO_ETL_STATUS_UNAUTHORIZED_MESSAGE
 from kobo_etl.schema import Mutation, Query
 
 STATUS_QUERY = "{ koboEtlStatus { availableScopes } }"
@@ -96,9 +96,7 @@ class KoboEtlRightsGraphQLTest(TestCase):
         status = self._execute(self.group_user, STATUS_QUERY)
         log = self._run(self.group_user, "kobo-etl-group-user")
 
-        # The resolver raises PermissionDenied(_("unauthorized")); the message is that
-        # msgid translated by the active catalogs.
         self.assertIsNone(status["data"]["koboEtlStatus"])
-        self.assertEqual(status["errors"][0]["message"], gettext("unauthorized"))
+        self.assertEqual(status["errors"][0]["message"], KOBO_ETL_STATUS_UNAUTHORIZED_MESSAGE)
         self.assertEqual(log.status, MutationLog.ERROR)
         self.assertIn("unauthorized", log.error.lower())
