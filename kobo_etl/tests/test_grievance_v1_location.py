@@ -14,6 +14,7 @@ from kobo_etl.builders.kobo.GrievanceConverter import GrievanceConverter, _resol
 from location.models import Location
 from location.test_helpers import create_test_location
 from merankabandi.models import KoboLocationCrosswalk
+from merankabandi.tests.grievance_config_helpers import use_grievance_categories
 
 
 def _located(colline):
@@ -91,6 +92,9 @@ class GrievanceV1LocationJsonTest(TestCase):
         cls.colline = create_test_location('V', custom_props={'code': 'VL1', 'name': 'Rabiro', 'parent': commune})
         KoboLocationCrosswalk.objects.create(kobo_code='901301', kobo_colline_label='Rabiro', location=cls.colline,
                                              match_method=KoboLocationCrosswalk.MATCH_EXACT)
+
+    def setUp(self):
+        use_grievance_categories(self)
 
     def _ticket(self, **fields):
         data = {'_uuid': str(uuid.uuid4()), 'id_plainte': 'V1', 'description_plainte': 'd',
