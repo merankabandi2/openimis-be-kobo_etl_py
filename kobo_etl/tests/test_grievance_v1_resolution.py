@@ -10,6 +10,7 @@ from grievance_social_protection.apps import TicketConfig
 from grievance_social_protection.models import Ticket
 from kobo_etl.builders.kobo.GrievanceConverter import GrievanceConverter
 from kobo_etl.services import KoboServices
+from merankabandi.tests.grievance_config_helpers import use_grievance_categories
 
 V1_FORM = "aeAgbxjy7d6rD8jtUdMD9Z"
 
@@ -43,6 +44,7 @@ class GrievanceV1ConverterResolutionTest(TestCase):
         patcher = mock.patch.dict('os.environ', {'KOBO_IMPORT_USERNAME': self.user.username})
         patcher.start()
         self.addCleanup(patcher.stop)
+        use_grievance_categories(self)
 
     def test_category_delay(self):
         ticket = GrievanceConverter.to_data_element_obj(
@@ -84,6 +86,7 @@ class SyncGrievanceV1ResolutionTest(TestCase):
         patcher = mock.patch.dict('os.environ', {'KOBO_IMPORT_USERNAME': self.user.username})
         patcher.start()
         self.addCleanup(patcher.stop)
+        use_grievance_categories(self)
 
     @mock.patch("kobo_etl.services.KoboServices.get")
     def test_imported_v1_ticket_has_resolution(self, kobo_get):
@@ -112,6 +115,7 @@ class SyncGrievanceV1CountLogTest(TestCase):
         patcher = mock.patch.dict('os.environ', {'KOBO_IMPORT_USERNAME': self.user.username})
         patcher.start()
         self.addCleanup(patcher.stop)
+        use_grievance_categories(self)
 
     def _sync_lines(self, submissions):
         with mock.patch("kobo_etl.services.KoboServices.get") as kobo_get, \
@@ -150,6 +154,7 @@ class GrievanceV1VbgTest(TestCase):
         patcher = mock.patch.dict('os.environ', {'KOBO_IMPORT_USERNAME': self.user.username})
         patcher.start()
         self.addCleanup(patcher.stop)
+        use_grievance_categories(self)
 
     def _vbg(self, **fields):
         return _v1_submission(**{
@@ -206,6 +211,7 @@ class GrievanceV1WorkflowTest(TestCase):
         patcher = mock.patch.dict('os.environ', {'KOBO_IMPORT_USERNAME': self.user.username})
         patcher.start()
         self.addCleanup(patcher.stop)
+        use_grievance_categories(self)
 
     def _sync(self, kobo_get, submissions):
         kobo_get.side_effect = lambda uid, **kwargs: {
