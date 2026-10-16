@@ -7,6 +7,9 @@ from core.models import MutationLog
 from kobo_etl.apps import KoboConfig, RUN_ETL_MUTATION_LOG_TAG
 from kobo_etl.strategy import kobo_client
 
+# Message of the koboEtlStatus refusal; fixed text, like the MutationLog entry of a refused run.
+KOBO_ETL_STATUS_UNAUTHORIZED_MESSAGE = "Unauthorized: the user may not read the KoBo ETL status"
+
 
 def _etl_forms():
     from kobo_etl.services.KoboServices import SCOPE_FORMS
@@ -57,6 +60,6 @@ class Query(graphene.ObjectType):
     def resolve_kobo_etl_status(self, info):
         # Check permissions
         if not info.context.user.has_perms(KoboConfig.gql_query_kobo_etl_status_perms):
-            raise PermissionDenied(_("unauthorized"))
+            raise PermissionDenied(KOBO_ETL_STATUS_UNAUTHORIZED_MESSAGE)
         
         return KoboETLStatusType()
